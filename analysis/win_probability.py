@@ -27,9 +27,27 @@ Three methods, in priority order:
    the sign agrees with which side is the moneyline favourite in 99.5% of
    games.
 
-3. COIN FLIP (last resort). No market at all: 0.50. This is not a real
-   forecast, just a neutral placeholder. It ignores team quality entirely, so
-   a schedule that is mostly unpriced produces mushy, over-even odds.
+3. RATINGS (for unpriced games). When there is no market at all, predict the
+   spread from market-implied team ratings (see ratings.py) and run it through
+   the same normal CDF:
+       p_home = Phi(predicted_spread / RATINGS_SIGMA)
+
+   The sigma is WIDER here, and deliberately so. SPREAD_SIGMA describes how far
+   a result lands from a real closing line. A predicted spread carries that
+   same game-day randomness PLUS the error in the prediction itself, and the
+   two are independent, so the variances add:
+       RATINGS_SIGMA = sqrt(SPREAD_SIGMA^2 + RATINGS_SPREAD_RMSE^2)
+   where RATINGS_SPREAD_RMSE is how far predicted spreads land from actual
+   closing lines, measured at 4.54 points over 598 backtested games. Reusing
+   the narrower market sigma would make the model overconfident about games it
+   is guessing at. Backtesting confirms the wider value scores slightly better,
+   though the curve is flat enough that the principled value is the reason to
+   prefer it, not the margin.
+
+4. COIN FLIP (last resort). No market and no ratings: 0.50. Not a forecast,
+   just a neutral placeholder. It ignores team quality entirely, so a schedule
+   that is mostly unpriced produces mushy, over-even odds -- which is exactly
+   what the ratings method above exists to fix.
 
 Usage:
     python analysis/win_probability.py --season 2026
@@ -52,10 +70,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Measured from completed 2022-2026 games in this database; see --calibrate.
 SPREAD_SIGMA = 12.38
 
+# RMSE of a ratings-predicted spread against the actual closing line, pooled
+# over the 2022-2025 backtests (598 games). See analysis/backtest.py.
+RATINGS_SPREAD_RMSE = 4.54
+# Prediction error and game-day randomness are independent, so variances add.
+RATINGS_SIGMA = math.sqrt(SPREAD_SIGMA**2 + RATINGS_SPREAD_RMSE**2)  # ~13.19
+
 METHOD_MONEYLINE = "moneyline"
 METHOD_SPREAD = "spread"
+METHOD_RATING = "rating"
 METHOD_COIN_FLIP = "coin_flip"
-METHODS = (METHOD_MONEYLINE, METHOD_SPREAD, METHOD_COIN_FLIP)
+METHODS = (METHOD_MONEYLINE, METHOD_SPREAD, METHOD_RATING, METHOD_COIN_FLIP)
 
 
 @dataclass(frozen=True)
@@ -66,10 +91,18 @@ class GameProb:
     away: str
     p_home: float
     method: str
+    # Spread this game was priced from, predicted or actual. None for a coin
+    # flip. The simulator re-derives probabilities from this when it jitters
+    # ratings, so it needs the points, not just the probability.
+    spread: float | None = None
 
     @property
     def p_away(self) -> float:
         return 1.0 - self.p_home
+
+    @property
+    def from_ratings(self) -> bool:
+        return self.method == METHOD_RATING
 
 
 def normal_cdf(z: float) -> float:
@@ -99,19 +132,34 @@ def prob_from_spread(spread_line: float, sigma: float = SPREAD_SIGMA) -> float:
     return normal_cdf(spread_line / sigma)
 
 
+def prob_from_rating_spread(
+    predicted_spread: float, sigma: float = RATINGS_SIGMA
+) -> float:
+    """P(home win) from a predicted spread, using the wider ratings sigma."""
+    return normal_cdf(predicted_spread / sigma)
+
+
 def win_probability(
     *,
     home_moneyline: float | None,
     away_moneyline: float | None,
     spread_line: float | None,
+    rating_spread: float | None = None,
     sigma: float = SPREAD_SIGMA,
-) -> tuple[float, str]:
-    """Best available P(home win), plus which method produced it."""
+) -> tuple[float, str, float | None]:
+    """Best available P(home win), the method used, and the spread behind it.
+
+    Priority: real market first (a moneyline is better than a spread because it
+    needs no distributional assumption), then ratings, then a coin flip.
+    """
     if home_moneyline is not None and away_moneyline is not None:
-        return prob_from_moneyline(home_moneyline, away_moneyline), METHOD_MONEYLINE
+        p = prob_from_moneyline(home_moneyline, away_moneyline)
+        return p, METHOD_MONEYLINE, spread_line
     if spread_line is not None:
-        return prob_from_spread(spread_line, sigma), METHOD_SPREAD
-    return 0.5, METHOD_COIN_FLIP
+        return prob_from_spread(spread_line, sigma), METHOD_SPREAD, spread_line
+    if rating_spread is not None:
+        return prob_from_rating_spread(rating_spread), METHOD_RATING, rating_spread
+    return 0.5, METHOD_COIN_FLIP, None
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +175,17 @@ def connect() -> psycopg.Connection:
 
 
 def remaining_game_probs(
-    conn: psycopg.Connection, season: int, sigma: float = SPREAD_SIGMA
+    conn: psycopg.Connection,
+    season: int,
+    sigma: float = SPREAD_SIGMA,
+    fit=None,
 ) -> list[GameProb]:
-    """Win probabilities for every unplayed regular-season game."""
+    """Win probabilities for every unplayed regular-season game.
+
+    Pass a RatingFit as `fit` to price games the market has not reached yet.
+    Omit it to get the old behaviour, where those games are coin flips -- which
+    is what makes a before/after comparison possible.
+    """
     rows = conn.execute(
         """
         SELECT game_id, week, home_team, away_team,
@@ -143,13 +199,20 @@ def remaining_game_probs(
 
     out = []
     for game_id, week, home, away, h_ml, a_ml, spread in rows:
-        p, method = win_probability(
+        rating_spread = None
+        if fit is not None:
+            try:
+                rating_spread = fit.predict_spread(home, away)
+            except KeyError:
+                rating_spread = None  # team missing from the fit
+        p, method, used_spread = win_probability(
             home_moneyline=float(h_ml) if h_ml is not None else None,
             away_moneyline=float(a_ml) if a_ml is not None else None,
             spread_line=float(spread) if spread is not None else None,
+            rating_spread=rating_spread,
             sigma=sigma,
         )
-        out.append(GameProb(game_id, week, home, away, p, method))
+        out.append(GameProb(game_id, week, home, away, p, method, used_spread))
     return out
 
 
@@ -182,6 +245,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--calibrate", action="store_true")
+    ap.add_argument("--no-ratings", action="store_true",
+                    help="coin-flip unpriced games instead of using ratings")
     args = ap.parse_args()
 
     with connect() as conn:
@@ -193,7 +258,14 @@ def main() -> int:
             print(f"\nmodule currently uses SPREAD_SIGMA = {SPREAD_SIGMA}")
             return 0
 
-        probs = remaining_game_probs(conn, args.season)
+        fit = None
+        if not args.no_ratings:
+            # Imported here so this module has no import-time dependency on
+            # ratings.py; it only needs an object with .predict_spread().
+            from ratings import fit_for_season
+
+            fit = fit_for_season(conn, args.season)
+        probs = remaining_game_probs(conn, args.season, fit=fit)
         counts = method_counts(probs)
         print(f"=== {args.season}: win probabilities for {len(probs)} remaining games ===\n")
         for m in METHODS:
