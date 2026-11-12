@@ -22,8 +22,12 @@ import polars as pl
 import psycopg
 from dotenv import load_dotenv
 
-DEFAULT_SEASONS = [2022, 2023, 2024, 2025]
-SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "..", "sql", "001_create_tables.sql")
+DEFAULT_SEASONS = [2022, 2023, 2024, 2025, 2026]
+SQL_DIR = os.path.join(os.path.dirname(__file__), "..", "sql")
+
+# Teams that exist upstream but are not part of the current 32-team league.
+# Schedules use LA for the Rams, LV for the Raiders and LAC for the Chargers.
+LEGACY_TEAMS = ["LAR", "OAK", "SD", "STL"]
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +157,32 @@ CONTRACTS = {
     ],
 }
 
-SPECS = {s["table"]: s for s in (GAMES, PLAYS, PLAYERS, CONTRACTS)}
+TEAMS = {
+    "table": "teams",
+    "scope": "snapshot",
+    "columns": [
+        "team_abbr", "team_name", "team_nick", "team_conf", "team_division",
+        "is_current", "team_color", "team_color2", "team_logo_espn",
+    ],
+    "rename": {},
+    "bools": [],
+    "dates": [],
+    "ints": [],
+    "floats": [],
+    # is_current does not exist upstream; we add it before selecting columns.
+    "derive": lambda df: df.with_columns(
+        (~pl.col("team_abbr").is_in(LEGACY_TEAMS)).alias("is_current")
+    ),
+}
+
+SPECS = {s["table"]: s for s in (TEAMS, GAMES, PLAYS, PLAYERS, CONTRACTS)}
 
 
 def prepare(df: pl.DataFrame, spec: dict) -> pl.DataFrame:
     """Select the columns we want and coerce them to database-friendly types."""
+    if spec.get("derive"):
+        df = spec["derive"](df)
+
     missing = [c for c in spec["columns"] if c not in df.columns]
     if missing:
         raise SystemExit(f"{spec['table']}: upstream data is missing {missing}")
@@ -199,12 +224,15 @@ def copy_into(conn: psycopg.Connection, table: str, df: pl.DataFrame) -> int:
 
 
 def apply_schema(conn: psycopg.Connection) -> None:
-    """Run the schema file. Every statement is IF NOT EXISTS, so this is safe
-    to run on every load."""
-    with open(os.path.abspath(SCHEMA_FILE)) as fh:
-        conn.execute(fh.read())
+    """Run every sql/NNN_*.sql migration in filename order. Each statement is
+    IF NOT EXISTS, so this is safe to run on every load."""
+    sql_dir = os.path.abspath(SQL_DIR)
+    files = sorted(f for f in os.listdir(sql_dir) if f.endswith(".sql"))
+    for name in files:
+        with open(os.path.join(sql_dir, name)) as fh:
+            conn.execute(fh.read())
     conn.commit()
-    print("schema applied")
+    print(f"schema applied ({', '.join(files)})")
 
 
 def load_season_table(conn: psycopg.Connection, spec: dict, seasons: list[int]) -> None:
@@ -234,7 +262,11 @@ def load_season_table(conn: psycopg.Connection, spec: dict, seasons: list[int]) 
 def load_snapshot_table(conn: psycopg.Connection, spec: dict) -> None:
     """Fully replace a table that has no season dimension upstream."""
     table = spec["table"]
-    loader = nfl.load_players if table == "players" else nfl.load_contracts
+    loader = {
+        "teams": nfl.load_teams,
+        "players": nfl.load_players,
+        "contracts": nfl.load_contracts,
+    }[table]
     df = prepare(loader(), spec)
 
     conn.execute(f"TRUNCATE {table} RESTART IDENTITY")
