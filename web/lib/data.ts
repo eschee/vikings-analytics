@@ -45,7 +45,22 @@ const TIER_LABELS: Record<Tier, string> = {
   doesnt_matter: "Doesn't matter",
 };
 
-export class UnknownTeamError extends Error {}
+/** Why a page could not be built.
+ *
+ *  loadPageData returns this instead of throwing. Errors do not survive a
+ *  "use cache" boundary as the same object -- an earlier version threw
+ *  UnknownTeamError and the page's `instanceof` check silently failed,
+ *  turning a 404 into a 500. A returned value crosses the boundary intact,
+ *  so the whole class of bug goes away rather than being fixed case by case.
+ */
+export type LoadFailure =
+  | { reason: "unknown-team"; message: string }
+  | { reason: "no-database"; message: string }
+  | { reason: "no-runs"; message: string };
+
+export type LoadResult =
+  | { ok: true; data: PageData }
+  | { ok: false; failure: LoadFailure };
 
 /** The allowlist, straight from the teams table. */
 export async function teamAllowlist(): Promise<string[]> {
@@ -58,7 +73,7 @@ function num(value: string | number | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
 }
 
-export async function loadPageData(teamParam: string): Promise<PageData> {
+export async function loadPageData(teamParam: string): Promise<LoadResult> {
   // The simulation runs three times a week, so an hour-old page is never
   // misleading. The GitHub Action also pokes a Vercel deploy hook after each
   // run, which rebuilds immediately; this is the backstop for when it doesn't.
@@ -69,16 +84,41 @@ export async function loadPageData(teamParam: string): Promise<PageData> {
 
   // Allowlist first, before the value reaches any other query. An unknown
   // team is a 404, never an empty page that looks like a real answer.
-  const allowed = await allowedTeams();
-  if (!allowed.includes(abbr)) {
-    throw new UnknownTeamError(`${teamParam} is not an NFL team`);
+  let allowed: string[];
+  let run: Awaited<ReturnType<typeof latestRun>>;
+  try {
+    allowed = await allowedTeams();
+    if (!allowed.includes(abbr)) {
+      return {
+        ok: false,
+        failure: {
+          reason: "unknown-team",
+          message: `${teamParam} is not an NFL team`,
+        },
+      };
+    }
+    run = await latestRun();
+  } catch {
+    return {
+      ok: false,
+      failure: {
+        reason: "no-database",
+        message:
+          "The database is not reachable. Check that DATABASE_URL points at " +
+          "the web_reader connection string.",
+      },
+    };
   }
 
-  const run = await latestRun();
   if (!run) {
-    throw new MissingDatabaseError(
-      "No simulation runs are stored yet. Run `python -m hatewatch.run`.",
-    );
+    return {
+      ok: false,
+      failure: {
+        reason: "no-runs",
+        message:
+          "No simulation runs are stored yet. Run `python -m hatewatch.run`.",
+      },
+    };
   }
 
   const [team, record, odds, nicks, impacts] = await Promise.all([
@@ -146,6 +186,8 @@ export async function loadPageData(teamParam: string): Promise<PageData> {
   const settled = playoffPct >= PLAYOFFS_SETTLED_PCT;
 
   return {
+    ok: true,
+    data: {
     teamNick: team?.team_nick ?? abbr,
     teamName: team?.team_name ?? abbr,
     teamAbbr: abbr,
@@ -164,5 +206,6 @@ export async function loadPageData(teamParam: string): Promise<PageData> {
       : null,
     ownGame: views.find((g) => g.isOwnGame) ?? null,
     games: views.filter((g) => !g.isOwnGame),
+    },
   };
 }

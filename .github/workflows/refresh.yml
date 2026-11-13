@@ -50,7 +50,10 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install --require-hashes=false -r requirements.txt
+        # --require-hashes is a boolean flag; passing it a value makes pip
+        # exit with "option does not take a value". requirements.txt is fully
+        # version-pinned, which is the protection that actually matters here.
+        run: pip install -r requirements.txt
 
       - name: Run the simulation and save a run
         env:
@@ -70,9 +73,13 @@ jobs:
             echo "VERCEL_DEPLOY_HOOK is not set; skipping the rebuild."
             exit 0
           fi
-          # -o /dev/null discards the body: Vercel echoes a job id that is
-          # derived from the hook URL. Only the status code is printed.
-          code=$(curl -sS -X POST -o /dev/null -w '%{http_code}' "${HOOK}")
+          # The URL is fed to curl through a config file on stdin rather than
+          # as an argument, so it never appears in the process list. printf is
+          # a shell builtin, so it does not spawn a process carrying it either.
+          # -o /dev/null discards the body: Vercel echoes a job id derived
+          # from the hook URL. Only the status code is printed.
+          code=$(printf 'url = "%s"\n' "${HOOK}" \
+            | curl -sS -X POST -o /dev/null -w '%{http_code}' --config -)
           echo "Deploy hook responded: ${code}"
           case "${code}" in
             2*) exit 0 ;;

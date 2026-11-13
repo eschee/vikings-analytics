@@ -132,11 +132,16 @@ def grant_statements(maintain: bool) -> list[sql.Composed]:
         stmts.append(
             sql.SQL("GRANT MAINTAIN ON {} TO {}").format(sql.SQL(", ").join(tables), writer)
         )
-    # Nothing new is readable by accident later.
-    stmts.append(
-        sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-                "REVOKE ALL ON TABLES FROM PUBLIC")
-    )
+    # NOTE: an earlier version added
+    #   ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES
+    #   FROM PUBLIC
+    # with a comment claiming it stopped future tables being readable by
+    # accident. It does not. PUBLIC holds no default privileges on tables in
+    # PostgreSQL 15 and later, so there is nothing to revoke, and without
+    # FOR ROLE the statement covers only objects created by the role running
+    # it. It was a no-op wearing a reassuring comment, which is worse than
+    # nothing, so it is gone. New tables simply start with no grants, and
+    # each role is granted explicitly above.
     return stmts
 
 
