@@ -146,7 +146,11 @@ def main() -> int:
         payload = build_payload(conn, team, run_id)
 
     out = args.out or os.path.join(DEFAULT_OUT_DIR, f"{team.lower()}-latest.json")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
+    # A bare filename like --out foo.json has no directory part, and makedirs("")
+    # raises rather than treating it as the current directory.
+    out_dir = os.path.dirname(out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(out, "w") as fh:
         json.dump(payload, fh, indent=2, default=_jsonable)
         fh.write("\n")
