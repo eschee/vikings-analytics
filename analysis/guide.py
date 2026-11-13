@@ -43,10 +43,10 @@ not distinguishable from zero. Two things make small numbers untrustworthy:
     draft pick, since that ranks all 32 teams.)
 
 Usage:
-    python analysis/hatewatch.py                 # this week
-    python analysis/hatewatch.py --compare       # before/after ratings
-    python analysis/hatewatch.py --goal draft
-    python analysis/hatewatch.py --week 14 --sims 50000
+    python analysis/guide.py                 # this week
+    python analysis/guide.py --compare       # before/after ratings
+    python analysis/guide.py --goal draft
+    python analysis/guide.py --week 14 --sims 50000
 """
 
 from __future__ import annotations

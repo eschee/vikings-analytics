@@ -6,3 +6,4 @@ data/
 *.csv
 .DS_Store
 .ipynb_checkpoints/
+web/sample-data/
