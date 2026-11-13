@@ -128,7 +128,11 @@ def connect() -> psycopg.Connection:
     load_dotenv(os.path.join(HERE, "..", ".env"))
     url = os.environ.get("DATABASE_URL")
     if not url:
-        raise SystemExit("DATABASE_URL is not set (expected in .env)")
+        raise SystemExit(
+            "DATABASE_URL is not set. Locally it comes from .env; in CI it "
+            "comes from the environment, so check that the workflow's secret "
+            "exists and is spelled the same way the workflow reads it."
+        )
     return psycopg.connect(url)
 
 

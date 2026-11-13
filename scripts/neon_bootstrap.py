@@ -90,9 +90,16 @@ def write_env(updates: dict[str, str]) -> None:
         out.append(f"{key}={value}")
 
     # 0600: the file holds live credentials.
+    #
+    # The mode passed to os.open applies only when the file is CREATED. .env
+    # usually exists already -- it holds DATABASE_URL and NEON_ADMIN_URL
+    # before this script runs -- so that argument did nothing and the file
+    # kept whatever permissions it had, which was world-readable 0644. The
+    # explicit chmod below is what actually enforces it.
     fd = os.open(ENV_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         fh.write("\n".join(out).rstrip("\n") + "\n")
+    os.chmod(ENV_PATH, 0o600)
 
 
 def apply_migrations(conn: psycopg.Connection) -> list[str]:
