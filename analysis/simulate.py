@@ -136,6 +136,14 @@ class SimResult:
     base_wins: dict[str, float]
     jitter_sd: float
     used_ratings: bool
+    # Per-team outcomes, (n_sims, 32). Filled only on the real-tiebreaker
+    # path, which seeds both conferences; None under --simple-tiebreakers.
+    team_index: dict[str, int] | None = None
+    team_made_playoffs: np.ndarray | None = None
+    team_won_division: np.ndarray | None = None
+    team_won_top_seed: np.ndarray | None = None
+    team_seed: np.ndarray | None = None       # 1-7, or 0 when out
+    team_draft_pick: np.ndarray | None = None  # (n_sims, 32), 1 = first overall
     real_tiebreakers: bool = True
     coin_tosses: int = 0           # iterations where the ladder ran out
     tiebreaks_resolved: int = 0    # tied groups the ladder had to separate
@@ -158,6 +166,26 @@ class SimResult:
 
     def outcome(self, goal: str) -> np.ndarray:
         return getattr(self, GOALS[goal][0])
+
+    @property
+    def has_all_teams(self) -> bool:
+        return self.team_index is not None
+
+    def team_outcome(self, goal: str, team: str) -> np.ndarray:
+        """One team's column of the goal matrix."""
+        if not self.has_all_teams:
+            raise RuntimeError(
+                "per-team outcomes need the real-tiebreaker path"
+            )
+        col = self.team_index[team]
+        if goal == "draft":
+            return self.team_draft_pick[:, col].astype(np.float64)
+        matrix = {
+            "playoffs": self.team_made_playoffs,
+            "division": self.team_won_division,
+            "top_seed": self.team_won_top_seed,
+        }[goal]
+        return matrix[:, col]
 
     def standard_error(self) -> float:
         p = self.playoff_odds
@@ -264,13 +292,21 @@ def simulate(
     # Draft order: pick 1 to the worst record. Ties broken at random via tiny
     # noise, which is NOT the NFL's draft procedure -- see the docstring.
     score = wins + rng.random((n_sims, n_teams)) * TIEBREAK_NOISE
-    draft_pick = 1 + (score < score[:, target_i : target_i + 1]).sum(axis=1)
+    # Rank every team at once: a team's slot is one more than the number of
+    # teams finishing below it.
+    order = np.argsort(np.argsort(score, axis=1), axis=1)
+    all_draft_picks = (order + 1).astype(np.int16)
+    draft_pick = all_draft_picks[:, target_i]
 
     won_division = np.zeros(n_sims, dtype=bool)
     made_playoffs = np.zeros(n_sims, dtype=bool)
     won_top_seed = np.zeros(n_sims, dtype=bool)
     coin_tosses = 0
     tiebreaks_resolved = 0
+    team_made = None
+    team_div = None
+    team_top = None
+    team_seed_arr = None
 
     if real_tiebreakers:
         # Scores are dropped from the played games as well, so every
@@ -291,6 +327,12 @@ def simulate(
         rem_away = [g.away for g in remaining]
         py_rng = random.Random(seed)
 
+        # Both conferences, so a single run produces all 32 teams' numbers.
+        team_made = np.zeros((n_sims, n_teams), dtype=bool)
+        team_div = np.zeros((n_sims, n_teams), dtype=bool)
+        team_top = np.zeros((n_sims, n_teams), dtype=bool)
+        team_seed_arr = np.zeros((n_sims, n_teams), dtype=np.int8)
+
         for s_i in range(n_sims):
             hw = home_wins[s_i]
             sim_results = [
@@ -298,15 +340,23 @@ def simulate(
                 for h, a, w in zip(rem_home, rem_away, hw)
             ]
             ctx = SeasonContext(fixed + sim_results, teams)
-            seeding = seed_conference(ctx, teams, conf, py_rng)
-            seeds = seeding.seeds
-            won_division[s_i] = target in seeding.division_winners
-            made_playoffs[s_i] = target in seeds
-            won_top_seed[s_i] = seeds[0] == target
-            for d in seeding.decisions:
-                tiebreaks_resolved += 1
-                if d.step == "coin toss":
-                    coin_tosses += 1
+            for c in ("AFC", "NFC"):
+                seeding = seed_conference(ctx, teams, c, py_rng)
+                for pos, abbr in enumerate(seeding.seeds, start=1):
+                    col = idx[abbr]
+                    team_made[s_i, col] = True
+                    team_seed_arr[s_i, col] = pos
+                for abbr in seeding.division_winners:
+                    team_div[s_i, idx[abbr]] = True
+                team_top[s_i, idx[seeding.seeds[0]]] = True
+                for d in seeding.decisions:
+                    tiebreaks_resolved += 1
+                    if d.step == "coin toss":
+                        coin_tosses += 1
+
+        made_playoffs = team_made[:, target_i].copy()
+        won_division = team_div[:, target_i].copy()
+        won_top_seed = team_top[:, target_i].copy()
     else:
         # The old behaviour: win total, then random.
         conf_divisions: dict[str, list[int]] = {}
@@ -342,7 +392,7 @@ def simulate(
         top_team = conf_cols[np.argmax(winner_score, axis=1)]
         won_top_seed = top_team == target_i
 
-    return SimResult(
+    result = SimResult(
         season=season,
         n_sims=n_sims,
         target=target,
@@ -358,7 +408,14 @@ def simulate(
         real_tiebreakers=real_tiebreakers,
         coin_tosses=coin_tosses,
         tiebreaks_resolved=tiebreaks_resolved,
+        team_index=dict(idx) if team_made is not None else None,
+        team_made_playoffs=team_made,
+        team_won_division=team_div,
+        team_won_top_seed=team_top,
+        team_seed=team_seed_arr,
+        team_draft_pick=all_draft_picks if team_made is not None else None,
     )
+    return result
 
 
 def main() -> int:
