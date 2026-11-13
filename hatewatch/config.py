@@ -57,6 +57,7 @@ MIN_NOISE_FLOOR = 0.25
 # ---------------------------------------------------------------------------
 # Reason codes
 # ---------------------------------------------------------------------------
+REASON_OWN_GAME = "own_game"
 REASON_DIVISION_RIVAL = "division_rival"
 REASON_WILDCARD_COMPETITOR = "wildcard_competitor"
 REASON_TOP_SEED_RACE = "top_seed_race"
@@ -64,6 +65,7 @@ REASON_TIEBREAKER_EFFECT = "tiebreaker_effect"
 REASON_OTHER = "other"
 
 REASON_LABELS = {
+    REASON_OWN_GAME: "Your own game",
     REASON_DIVISION_RIVAL: "Division rival",
     REASON_WILDCARD_COMPETITOR: "Wild-card competitor",
     REASON_TOP_SEED_RACE: "#1 seed race",
