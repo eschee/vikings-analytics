@@ -65,13 +65,16 @@ def insert_impacts(
     with conn.cursor() as cur:
         with cur.copy(
             "COPY game_impacts (run_id, game_id, team, goal, root_for, "
-            "impact_pts, root_for_win_pct, tier, reason_code) FROM STDIN"
+            "impact_pts, root_for_win_pct, tier, reason_code, "
+            "value_if_root_for_wins, value_if_root_for_loses) FROM STDIN"
         ) as cp:
             for r in rows:
                 cp.write_row(
                     (run_id, r.game_id, r.team, r.goal, r.root_for,
                      round(r.impact_pts, 3), round(r.root_for_win_pct, 3),
-                     r.tier, r.reason_code)
+                     r.tier, r.reason_code,
+                     round(r.value_if_root_for_wins, 3),
+                     round(r.value_if_root_for_loses, 3))
                 )
     return len(rows)
 
@@ -148,7 +151,8 @@ def impacts_for(
     sql = """
         SELECT i.game_id, g.week, g.away_team, g.home_team, i.goal,
                i.root_for, i.impact_pts, i.root_for_win_pct, i.tier,
-               i.reason_code
+               i.reason_code, i.value_if_root_for_wins,
+               i.value_if_root_for_loses, g.gameday, g.weekday, g.gametime
         FROM game_impacts i
         JOIN games g ON g.game_id = i.game_id
         WHERE i.run_id = %s AND i.team = %s
@@ -163,5 +167,7 @@ def impacts_for(
     sql += " ORDER BY g.week, i.impact_pts DESC"
     rows = conn.execute(sql, params).fetchall()
     keys = ("game_id", "week", "away_team", "home_team", "goal", "root_for",
-            "impact_pts", "root_for_win_pct", "tier", "reason_code")
+            "impact_pts", "root_for_win_pct", "tier", "reason_code",
+            "value_if_root_for_wins", "value_if_root_for_loses",
+            "gameday", "weekday", "gametime")
     return [dict(zip(keys, r)) for r in rows]
