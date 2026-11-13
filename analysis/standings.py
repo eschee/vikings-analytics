@@ -3,15 +3,16 @@
 Computes overall, division and conference records from the games table, then
 orders teams into division standings and playoff seeds.
 
-TIEBREAKERS: this uses win percentage, then a random draw. The real NFL
-tiebreaker ladder (head-to-head, division record, common games, conference
-record, strength of victory, strength of schedule, then coin flip) is not
-implemented yet. Division and conference records ARE computed here, so the
-first few rungs of that ladder can be added without touching the data layer.
-A random tiebreak is deliberate rather than lazy: in a Monte Carlo simulation
-it gives every tied team an equal share of the contested seed, which is a
-defensible neutral prior. It does mean two runs can disagree on a knife-edge
-tie.
+TIEBREAKERS: the real NFL procedures, implemented in tiebreakers.py. Teams
+tied on record are separated by head-to-head, division record, common games,
+conference record, strength of victory, strength of schedule and the
+points-based steps, with a coin toss only if all of them come out level.
+Seeding among division winners and among wild-card contenders uses the
+different-divisions ladder, including the rule that division rivals are
+settled between themselves before either can compete for a wild card.
+
+The old behaviour (win percentage, then random) is kept behind
+--simple-tiebreakers for comparison.
 
 Usage:
     python analysis/standings.py --season 2026
@@ -22,10 +23,23 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import sys
 from dataclasses import dataclass, field
 
 import psycopg
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from tiebreakers import (
+    DIVISION_LADDER,
+    WILDCARD_LADDER,
+    Decision,
+    Result,
+    SeasonContext,
+    rank_teams,
+    rank_wildcards,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -199,54 +213,121 @@ def compute_records(
 # Ordering and seeding
 # ---------------------------------------------------------------------------
 
-def _sort_key(rec: Record, rng: random.Random) -> tuple[float, float]:
-    """Win percentage, then a random draw.
+def build_context(
+    games: list[Game], teams: dict[str, Team]
+) -> SeasonContext:
+    """Turn completed games into the structure the tiebreakers read."""
+    results = [
+        Result(g.home, g.away, g.home_score, g.away_score)
+        for g in games
+        if g.played
+    ]
+    return SeasonContext(results, teams)
 
-    See the module docstring: the real NFL ladder goes here eventually.
-    """
+
+# --- the simple (pre-tiebreaker) ordering, kept for comparison -------------
+
+def _simple_key(rec: Record, rng: random.Random) -> tuple[float, float]:
     return (-rec.win_pct, rng.random())
 
 
-def order_teams(
+def order_teams_simple(
     abbrs: list[str], records: dict[str, Record], rng: random.Random
 ) -> list[str]:
-    return sorted(abbrs, key=lambda a: _sort_key(records[a], rng))
+    return sorted(abbrs, key=lambda a: _simple_key(records[a], rng))
+
+
+# --- real NFL ordering -----------------------------------------------------
+
+def teams_by_division(teams: dict[str, Team], conf: str | None = None
+                      ) -> dict[str, list[str]]:
+    by_div: dict[str, list[str]] = {}
+    for abbr, team in teams.items():
+        if conf and team.conf != conf:
+            continue
+        by_div.setdefault(team.division, []).append(abbr)
+    return dict(sorted(by_div.items()))
 
 
 def division_standings(
-    records: dict[str, Record], teams: dict[str, Team], rng: random.Random
-) -> dict[str, list[str]]:
-    """Each division's teams, best to worst."""
-    by_div: dict[str, list[str]] = {}
-    for abbr, team in teams.items():
-        by_div.setdefault(team.division, []).append(abbr)
-    return {d: order_teams(a, records, rng) for d, a in sorted(by_div.items())}
+    ctx: SeasonContext,
+    teams: dict[str, Team],
+    rng: random.Random,
+) -> tuple[dict[str, list[str]], list[Decision]]:
+    """Each division ordered best to worst, using the division ladder."""
+    out: dict[str, list[str]] = {}
+    decisions: list[Decision] = []
+    for div, abbrs in teams_by_division(teams).items():
+        order, ds = rank_teams(abbrs, ctx, DIVISION_LADDER, rng)
+        out[div] = order
+        decisions.extend(ds)
+    return out, decisions
+
+
+@dataclass
+class Seeding:
+    conf: str
+    seeds: list[str]                 # 7 teams, seed 1 first
+    division_winners: list[str]      # seeds 1-4, in order
+    wild_cards: list[str]            # seeds 5-7, in order
+    decisions: list[Decision] = field(default_factory=list)
+
+    def seed_of(self, team: str) -> int | None:
+        return self.seeds.index(team) + 1 if team in self.seeds else None
+
+
+def seed_conference(
+    ctx: SeasonContext,
+    teams: dict[str, Team],
+    conf: str,
+    rng: random.Random,
+) -> Seeding:
+    """Build one conference's playoff field, seeds 1-7.
+
+    Three stages, each with its own rule:
+      1. Win each division -- the DIVISION ladder, since these are rivals.
+      2. Order the four winners into seeds 1-4 -- the WILD-CARD ladder,
+         because they come from different divisions.
+      3. Fill seeds 5-7 from everyone left -- the wild-card procedure,
+         including the division-first rule.
+    """
+    divisions = teams_by_division(teams, conf)
+    if len(divisions) != DIVISION_WINNERS_PER_CONF:
+        raise SystemExit(f"{conf}: expected 4 divisions, found {len(divisions)}")
+
+    decisions: list[Decision] = []
+    winners: list[str] = []
+    runners_up: list[str] = []
+    for div, abbrs in divisions.items():
+        order, ds = rank_teams(abbrs, ctx, DIVISION_LADDER, rng)
+        decisions.extend(ds)
+        winners.append(order[0])
+        runners_up.extend(order[1:])
+
+    seeded_winners, ds = rank_teams(winners, ctx, WILDCARD_LADDER, rng)
+    decisions.extend(ds)
+
+    wc_order, ds = rank_wildcards(runners_up, ctx, rng)
+    decisions.extend(ds)
+    wild_cards = wc_order[:WILD_CARDS_PER_CONF]
+
+    return Seeding(
+        conf=conf,
+        seeds=seeded_winners + wild_cards,
+        division_winners=seeded_winners,
+        wild_cards=wild_cards,
+        decisions=decisions,
+    )
 
 
 def playoff_seeds(
-    records: dict[str, Record],
+    ctx: SeasonContext,
     teams: dict[str, Team],
     conf: str,
     rng: random.Random,
 ) -> list[str]:
-    """The 7 playoff teams in one conference, in seed order.
-
-    Division winners take seeds 1-4 ordered by record; the best three
-    non-winners take seeds 5-7.
-    """
-    divisions = {
-        d: order for d, order in division_standings(records, teams, rng).items()
-        if d.startswith(conf)
-    }
-    if len(divisions) != DIVISION_WINNERS_PER_CONF:
-        raise SystemExit(f"{conf}: expected 4 divisions, found {len(divisions)}")
-
-    winners = [order[0] for order in divisions.values()]
-    others = [a for order in divisions.values() for a in order[1:]]
-
-    seeded_winners = order_teams(winners, records, rng)
-    wild_cards = order_teams(others, records, rng)[:WILD_CARDS_PER_CONF]
-    return seeded_winners + wild_cards
+    """The 7 playoff teams in seed order."""
+    return seed_conference(ctx, teams, conf, rng).seeds
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +337,9 @@ def playoff_seeds(
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--season", type=int, default=2026)
-    ap.add_argument("--seed", type=int, default=0, help="RNG seed for tiebreaks")
+    ap.add_argument("--seed", type=int, default=0, help="RNG seed for coin tosses")
+    ap.add_argument("--show-decisions", action="store_true",
+                    help="print which step decided each tiebreak")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -266,24 +349,38 @@ def main() -> int:
 
     played = sum(1 for g in games if g.played)
     records = compute_records(games, teams)
+    ctx = build_context(games, teams)
     print(f"=== {args.season} standings ({played}/{len(games)} games played) ===")
 
-    for div, order in division_standings(records, teams, rng).items():
+    div_order, _ = division_standings(ctx, teams, rng)
+    for div, order in div_order.items():
         print(f"\n{div}")
-        print(f"  {'team':<5} {'overall':>9} {'pct':>6} {'div':>7} {'conf':>7}")
+        print(f"  {'team':<5} {'overall':>9} {'pct':>6} {'div':>7} {'conf':>7} "
+              f"{'SOV':>6} {'SOS':>6}")
         for abbr in order:
             r = records[abbr]
             overall = f"{r.wins}-{r.losses}" + (f"-{r.ties}" if r.ties else "")
-            div_rec = f"{r.div_wins}-{r.div_losses}" + (f"-{r.div_ties}" if r.div_ties else "")
-            conf_rec = f"{r.conf_wins}-{r.conf_losses}" + (f"-{r.conf_ties}" if r.conf_ties else "")
-            print(f"  {abbr:<5} {overall:>9} {r.win_pct:>6.3f} {div_rec:>7} {conf_rec:>7}")
+            div_rec = f"{r.div_wins}-{r.div_losses}" + (
+                f"-{r.div_ties}" if r.div_ties else "")
+            conf_rec = f"{r.conf_wins}-{r.conf_losses}" + (
+                f"-{r.conf_ties}" if r.conf_ties else "")
+            print(f"  {abbr:<5} {overall:>9} {r.win_pct:>6.3f} {div_rec:>7} "
+                  f"{conf_rec:>7} {ctx.strength_of_victory(abbr):>6.3f} "
+                  f"{ctx.strength_of_schedule(abbr):>6.3f}")
 
     for conf in ("AFC", "NFC"):
-        seeds = playoff_seeds(records, teams, conf, rng)
-        print(f"\n{conf} seeds if the season ended today (win pct, random tiebreak)")
-        for i, abbr in enumerate(seeds, start=1):
+        seeding = seed_conference(ctx, teams, conf, rng)
+        print(f"\n{conf} seeds (real NFL tiebreakers)")
+        for i, abbr in enumerate(seeding.seeds, start=1):
             tag = "div winner" if i <= DIVISION_WINNERS_PER_CONF else "wild card"
             print(f"  {i}. {abbr:<4} {records[abbr].win_pct:.3f}  {tag}")
+        if args.show_decisions and seeding.decisions:
+            print(f"  tiebreaks applied:")
+            for d in seeding.decisions:
+                skipped = (f"  [skipped: {', '.join(d.skipped)}]"
+                           if d.skipped else "")
+                print(f"    {'/'.join(d.group):<20} -> {d.winner:<4} "
+                      f"by {d.step}{skipped}")
     return 0
 
 

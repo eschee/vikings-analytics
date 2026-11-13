@@ -64,10 +64,10 @@ from simulate import GOALS, SimResult, simulate
 from standings import connect, load_teams
 from win_probability import method_counts
 
-# Calibrated against the other-conference control group, whose true impact on
-# the playoff goal is exactly zero: at 2.0 sigma, 3 of those 50 games were
-# wrongly flagged real (about the 5% false-positive rate you would predict);
-# at 2.5 and above, none were. 3.0 leaves headroom.
+# Calibrated against the other-conference control group, whose impact on the
+# playoff goal is at most a hair (see the docstring): at 2.0 sigma, 3 of those
+# 50 games were wrongly flagged real, about the 5% false-positive rate you
+# would predict; at 2.5 and above, none were. 3.0 leaves headroom.
 NOISE_SIGMA_THRESHOLD = 3.0
 
 GOAL_UNITS = {
@@ -220,7 +220,7 @@ def find_disagreements(
 
 
 def print_summary(res: SimResult, label: str) -> None:
-    print(f"  {label:<10} playoffs {res.playoff_odds * 100:5.1f}%   "
+    print(f"  {label:<18} playoffs {res.playoff_odds * 100:5.1f}%   "
           f"division {res.division_odds * 100:5.1f}%   "
           f"#1 seed {res.top_seed_odds * 100:5.1f}%   "
           f"mean draft pick {res.mean_draft_pick:4.1f}")
@@ -236,18 +236,30 @@ def main() -> int:
     ap.add_argument("--goal", default="playoffs", choices=list(GOALS))
     ap.add_argument("--all-weeks", action="store_true")
     ap.add_argument("--compare", action="store_true",
-                    help="also run without ratings, to show before/after")
+                    help="run all three model generations for before/after")
     ap.add_argument("--no-ratings", action="store_true")
+    ap.add_argument("--simple-tiebreakers", action="store_true")
     args = ap.parse_args()
 
     with connect() as conn:
         teams = load_teams(conn)
         res = simulate(conn, args.season, args.sims, args.team, args.seed,
-                       use_ratings=not args.no_ratings)
+                       use_ratings=not args.no_ratings,
+                       real_tiebreakers=not args.simple_tiebreakers)
         before = None
+        stages: list[tuple[str, SimResult]] = []
         if args.compare:
-            before = simulate(conn, args.season, args.sims, args.team, args.seed,
-                              use_ratings=False)
+            # Each generation of the model, same seed, so the draws line up.
+            v1 = simulate(conn, args.season, args.sims, args.team, args.seed,
+                          use_ratings=False, real_tiebreakers=False)
+            v2 = simulate(conn, args.season, args.sims, args.team, args.seed,
+                          use_ratings=True, real_tiebreakers=False)
+            stages = [
+                ("50/50 + simple", v1),
+                ("ratings + simple", v2),
+                ("ratings + real TB", res),
+            ]
+            before = v2    # the change this branch makes is tiebreakers
 
     if not res.games:
         print(f"{args.season}: no remaining games.")
@@ -263,12 +275,15 @@ def main() -> int:
     print(f"  pricing: " + ", ".join(f"{m} {c}" for m, c in counts.items() if c))
     print(f"  rating jitter: {res.jitter_sd:.2f} points\n")
 
-    if before is not None:
-        print("  BEFORE/AFTER (same seed, same 20,000 draws)")
+    if stages:
+        print(f"  MODEL GENERATIONS (same seed, same {res.n_sims:,} draws)")
+        for label, r in stages:
+            print_summary(r, label)
+        print(f"  {'':<18} this branch changes the third row only "
+              f"(simple -> real tiebreakers)")
+    elif before is not None:
         print_summary(before, "before")
         print_summary(res, "after")
-        print(f"  {'':<10} before = unpriced games as 50/50; "
-              f"after = market-implied ratings")
     else:
         print_summary(res, "odds")
     print(f"\n  playoff odds standard error: "
@@ -285,8 +300,8 @@ def main() -> int:
         n_ctrl, floor = noise_floor(impacts, control_ids)
         if n_ctrl:
             print(f"\n  Noise floor: {n_ctrl} remaining games are "
-                  f"{team.conf}-irrelevant, so their true impact")
-            print(f"  on '{args.goal}' is zero. Largest measured: "
+                  f"{team.conf}-irrelevant apart from a hair")
+            print(f"  via strength of victory/schedule. Largest measured: "
                   f"{floor:.2f} {GOAL_UNITS[args.goal]} -- the resolution limit.")
 
     if args.all_weeks:
@@ -311,7 +326,7 @@ def main() -> int:
 
     if before is not None:
         b_imp = [i for i in compute_impacts(before, args.goal) if i.week == week]
-        print_table(b_imp, f"Week {week} BEFORE (unpriced games as 50/50), "
+        print_table(b_imp, f"Week {week} BEFORE (simple tiebreakers), "
                     f"for comparison", args.team)
 
     # --- where the goals disagree -------------------------------------------
