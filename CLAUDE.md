@@ -32,6 +32,7 @@ FastAPI backend, React frontend, and a hosted Postgres (Neon) copy.
 - Push the branch and open a pull request with `gh pr create` when a feature works.
 - Ask me before merging a PR into main.
 - Never force-push or rewrite history.
+- Stage files by name with `git add <file>`; never use `git add -A` or `git add .`
 - Briefly explain each git command you run and why, since I'm learning git.
 
 ## Working style

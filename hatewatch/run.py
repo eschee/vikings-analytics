@@ -3,6 +3,7 @@
     python -m hatewatch.run
     python -m hatewatch.run --sims 50000
     python -m hatewatch.run --skip-refresh      # reuse what is in the database
+    python -m hatewatch.run --skip-schema       # do not touch the schema
 
 Four steps:
 
@@ -13,11 +14,22 @@ Four steps:
      the rest of the season many times with the real NFL tiebreakers.
   3. COMPUTE. Build every team's season odds and the full impact grid -- all 32
      teams, every remaining game, all four goals.
-  4. SAVE. Insert a new run. Nothing is overwritten: old runs stay so odds can
-     be charted over time, which is the whole reason for the run_id key.
+  4. SAVE. Insert a new run, then prune old impact grids. sim_runs and
+     team_odds are never deleted, so the odds history stays complete.
 
 The run is written in a single transaction. A failure part-way leaves no
 half-saved run behind for the website to read.
+
+--skip-schema exists for production. By default this applies every migration
+on every run, which is convenient locally but means the database role would
+need permission to create and alter tables. Against a hosted database the
+refresh job should be able to write rows and nothing else, so it runs with
+--skip-schema and migrations are applied separately by the owner.
+
+A note on logs: this runs in a public GitHub repository, where Actions output
+is world-readable. Nothing here prints a connection string, and connection
+failures are reported without the driver's message, because that message
+contains the host and username.
 """
 
 from __future__ import annotations
@@ -27,7 +39,7 @@ import datetime as dt
 
 from . import config
 from .impacts import build_rows
-from .store import insert_impacts, insert_run, insert_team_odds
+from .store import insert_impacts, insert_run, insert_team_odds, prune_impacts
 
 
 def main() -> int:
@@ -37,9 +49,17 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=config.DEFAULT_SEED)
     ap.add_argument("--skip-refresh", action="store_true",
                     help="do not reload games; use what is already stored")
+    ap.add_argument("--skip-schema", action="store_true",
+                    help="do not apply migrations (use against a hosted "
+                         "database where the writer role has no DDL rights)")
+    ap.add_argument("--keep-impacts", type=int,
+                    default=config.IMPACT_RETENTION_RUNS,
+                    help="how many runs of game_impacts to retain")
     args = ap.parse_args()
 
     # Imported here so the sys.path setup in __init__ has already run.
+    import psycopg
+
     import load_data
     from simulate import simulate
     from standings import connect, load_games, load_teams
@@ -49,9 +69,23 @@ def main() -> int:
     print(f"=== hatewatch run: {season}, {args.sims:,} sims ===")
     print(f"  model version: {config.MODEL_VERSION}\n")
 
-    with connect() as conn:
+    # Connect separately so a failure can be reported without the driver's
+    # message, which embeds the host and username.
+    try:
+        conn = connect()
+    except psycopg.Error:
+        raise SystemExit(
+            "could not connect to the database. Details withheld on purpose: "
+            "the driver's error names the host and user, and this runs in a "
+            "public repository. Check DATABASE_URL."
+        )
+
+    with conn:
         # --- 1. refresh -----------------------------------------------------
-        load_data.apply_schema(conn)
+        if args.skip_schema:
+            print("  schema untouched (--skip-schema)")
+        else:
+            load_data.apply_schema(conn)
         if args.skip_refresh:
             row = conn.execute(
                 "SELECT max(created_at) FROM sim_runs WHERE season = %s",
@@ -104,6 +138,13 @@ def main() -> int:
         insert_team_odds(conn, run_id, odds)
         insert_impacts(conn, run_id, rows)
         conn.commit()
+
+        # Retention: drop older impact grids, keep every run's odds.
+        pruned = prune_impacts(conn, args.keep_impacts)
+        conn.commit()
+        if pruned:
+            print(f"  pruned {pruned:,} impact rows from older runs "
+                  f"(keeping {args.keep_impacts})")
 
         total = conn.execute("SELECT count(*) FROM sim_runs").fetchone()[0]
         print(f"\n  saved run {run_id} ({total} run(s) stored in total)")

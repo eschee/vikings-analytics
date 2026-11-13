@@ -79,6 +79,29 @@ def insert_impacts(
     return len(rows)
 
 
+def prune_impacts(conn: psycopg.Connection, keep: int) -> int:
+    """Drop game_impacts for all but the newest `keep` runs.
+
+    sim_runs and team_odds are untouched, so the odds history stays complete
+    while the bulky per-game grid does not accumulate. Deleting straight from
+    game_impacts rather than from sim_runs is deliberate: removing the run row
+    would cascade and take the odds with it.
+    """
+    if keep < 1:
+        raise ValueError("keep must be at least 1")
+    return conn.execute(
+        """
+        DELETE FROM game_impacts
+        WHERE run_id NOT IN (
+            SELECT run_id FROM sim_runs
+            ORDER BY created_at DESC, run_id DESC
+            LIMIT %s
+        )
+        """,
+        (keep,),
+    ).rowcount
+
+
 def latest_run_id(
     conn: psycopg.Connection, season: int | None = None
 ) -> int | None:
