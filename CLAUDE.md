@@ -56,5 +56,7 @@ FastAPI backend, React frontend, and a hosted Postgres (Neon) copy.
   GitHub Actions. Ordinary code changes do not need this.
 - Never print a secret value. Not a password, not a connection string, not a
   token — not even partially, and not in a command you ask me to run. Put it
-  on the clipboard with `pbcopy`, or write it to a gitignored file, and tell
-  me only the variable name and where it goes.
+  on the clipboard with `pbcopy`, or write it to `.env` (mode 0600), and tell
+  me only the variable name and where it goes. "Gitignored" is not a storage
+  control: an ignored scratch file is still created world-readable at the
+  default umask, so secrets stay in the three places the Security rules name.

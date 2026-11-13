@@ -36,7 +36,7 @@ Python simulation            local, and in GitHub Actions
   ratings -> win probs -> 100,000 simulated seasons -> impacts
       |
       v
-Neon Postgres 18             5 tables, ~19 MB
+Neon Postgres 18.7           5 tables, ~19 MB (code requires >= 16)
       |  web_reader (SELECT only)
       v
 Next.js 16 on Vercel         App Router, TypeScript, Tailwind v4
@@ -82,8 +82,9 @@ directly instead.
 
 ### Tables on Neon
 
-Only what the site and the refresh job read. `plays` (139 MB), `players` and
-`contracts` stay in the local database — they are for analysis, not the site.
+Only what the site and the refresh job read. `plays` (139 MB), `contracts`
+(14 MB) and `players` (10 MB) stay in the local database — 163 MB of analysis
+data that neither the site nor the refresh job touches.
 
 | table | contents | growth |
 |---|---|---|
