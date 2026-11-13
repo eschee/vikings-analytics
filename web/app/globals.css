@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* Design tokens. Tailwind v4 reads these and generates the matching
+   utilities, so `bg-brand` or `text-gold` work without a JS config file. */
+@theme {
+  --color-brand: #2b1758;        /* purple header and heading text */
+  --color-brand-soft: #3d2470;   /* raised surfaces on the header */
+  --color-brand-line: #553a8a;   /* hairlines on the header */
+  --color-gold: #f2b705;         /* the number in the headline, share button */
+  --color-page: #f5f3f9;         /* page background */
+  --color-card: #ffffff;
+  --color-line: #e4dfee;         /* card borders */
+  --color-muted: #4a4458;        /* secondary text, 9.3:1 on white */
+  --color-lavender: #cfc4e8;     /* secondary text on the purple header */
+  --color-chip-win: #ede9f7;
+  --color-chip-lose: #fbeae1;
+  --color-lose-text: #b3400a;    /* 4.9:1 on the peach chip */
+  --color-dot-on: #5b3fa8;
+  --color-dot-off: #ded6ef;
+
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-page);
+  font-family: var(--font-body);
+  color: var(--color-brand);
+}
+
+/* One focus treatment for every interactive element, so keyboard users always
+   get a visible ring regardless of the surface it sits on. */
+@layer base {
+  :where(button, a, select, summary):focus-visible {
+    outline: 3px solid var(--color-dot-on);
+    outline-offset: 2px;
+    border-radius: 10px;
+  }
+}

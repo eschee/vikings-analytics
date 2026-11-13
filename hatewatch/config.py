@@ -18,7 +18,12 @@ from __future__ import annotations
 MODEL_VERSION = "v4-ratings-jitter-realtb"
 
 DEFAULT_SEASON = 2026
-DEFAULT_SIMS = 20_000
+# 100,000 rather than 20,000. At 20k the noise floor for a team sat near
+# 1.9 points, which is just under the 2.0 "root hard" cutoff -- so a game whose
+# true impact was around 2 points flipped between "Root hard" and "Doesn't
+# matter" from one run to the next purely on noise. At 100k the floor drops to
+# about 1.3 and that band stops being a coin toss. Costs about 60 seconds.
+DEFAULT_SIMS = 100_000
 DEFAULT_SEED = 20260101
 
 # ---------------------------------------------------------------------------

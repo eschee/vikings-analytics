@@ -53,6 +53,10 @@ class ImpactRow:
     root_for_win_pct: float
     tier: str
     reason_code: str
+    # Both arms of the comparison, in the goal's own units. The website shows
+    # these as "if they win / if they lose"; impact_pts is just the gap.
+    value_if_root_for_wins: float
+    value_if_root_for_loses: float
 
 
 @dataclass
@@ -208,6 +212,14 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
                 home_is_better = d > 0 if higher_better else d < 0
                 root_for = g.home if home_is_better else g.away
                 swing = abs(d)
+                # The arm where root_for wins is the home arm when root_for is
+                # the home team, and the away arm otherwise.
+                vh = float(home_arm[g.game_id][col]) * scale
+                va = float(away_arm[g.game_id][col]) * scale
+                if root_for == g.home:
+                    v_win, v_lose = vh, va
+                else:
+                    v_win, v_lose = va, vh
                 rows.append(
                     ImpactRow(
                         game_id=g.game_id,
@@ -223,6 +235,8 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
                             abbr, g.home, g.away, goal, conf, division,
                             playoff_pct, top_seed_pct,
                         ),
+                        value_if_root_for_wins=v_win,
+                        value_if_root_for_loses=v_lose,
                     )
                 )
     return odds, rows

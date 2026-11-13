@@ -21,11 +21,53 @@ import decimal
 import json
 import os
 from collections import OrderedDict
+from zoneinfo import ZoneInfo
 
 from . import PROJECT_ROOT, config
 from .store import impacts_for, latest_run_id, run_meta, team_odds_for
 
 DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "web", "sample-data")
+
+# nflverse publishes kickoff times in US Eastern. The site shows Central,
+# which is where the Vikings play, so we convert once here and ship a
+# preformatted string. Doing it server-side keeps the rendered time identical
+# everywhere instead of varying with the reader's browser timezone.
+KICKOFF_SOURCE_TZ = ZoneInfo("America/New_York")
+KICKOFF_DISPLAY_TZ = ZoneInfo("America/Chicago")
+KICKOFF_TZ_LABEL = "CT"
+
+
+def format_kickoff(gameday, weekday: str | None, gametime: str | None) -> dict:
+    """Build the kickoff strings the page shows. Never raises on odd input."""
+    out = {
+        "iso": None,
+        "day": (weekday or "")[:3],
+        "time": None,
+        "label": (weekday or "")[:3],
+        "tz": KICKOFF_TZ_LABEL,
+    }
+    if gameday is None or not gametime:
+        return out
+    # The datetime construction has to be inside the try as well: "25:00"
+    # parses to ints perfectly well and then raises "hour must be in 0..23".
+    # Catching only the parse left that case crashing the export.
+    try:
+        hour, minute = (int(p) for p in str(gametime).split(":")[:2])
+        eastern = dt.datetime(
+            gameday.year, gameday.month, gameday.day, hour, minute,
+            tzinfo=KICKOFF_SOURCE_TZ,
+        )
+    except (ValueError, TypeError):
+        return out
+    local = eastern.astimezone(KICKOFF_DISPLAY_TZ)
+    day = local.strftime("%a")
+    # %-I is "1" not "01"; strftime on macOS and Linux both accept it.
+    clock = local.strftime("%-I:%M %p")
+    out.update(
+        {"iso": local.isoformat(), "day": day, "time": clock,
+         "label": f"{day} {clock}"}
+    )
+    return out
 
 
 def _jsonable(value):
@@ -36,6 +78,23 @@ def _jsonable(value):
     if isinstance(value, (dt.datetime, dt.date)):
         return value.isoformat()
     raise TypeError(f"not JSON serialisable: {type(value).__name__}")
+
+
+def team_record(conn, season: int, team: str) -> dict:
+    """The team's W-L-T so far, reusing the validated standings code rather
+    than counting games again here."""
+    from standings import compute_records, load_games, load_teams
+
+    teams = load_teams(conn)
+    games = load_games(conn, season)
+    rec = compute_records(games, teams)[team]
+    text = f"{rec.wins}-{rec.losses}" + (f"-{rec.ties}" if rec.ties else "")
+    return {
+        "wins": rec.wins,
+        "losses": rec.losses,
+        "ties": rec.ties,
+        "text": text,
+    }
 
 
 def build_payload(conn, team: str, run_id: int) -> dict:
@@ -54,6 +113,14 @@ def build_payload(conn, team: str, run_id: int) -> dict:
         (team,),
     ).fetchone()
 
+    # Nicknames for every team, so the page can say "Cardinals" rather than
+    # "ARI" without shipping a hardcoded map to the frontend.
+    nicknames = {
+        r[0]: r[1] for r in conn.execute(
+            "SELECT team_abbr, team_nick FROM teams WHERE is_current"
+        ).fetchall()
+    }
+
     rows = impacts_for(conn, run_id, team)
 
     # Group by week, then by game, with all four goals under each game. That is
@@ -70,6 +137,10 @@ def build_payload(conn, team: str, run_id: int) -> dict:
                 "goals": {},
             },
         )
+        if "kickoff" not in game:
+            game["kickoff"] = format_kickoff(
+                r["gameday"], r["weekday"], r["gametime"]
+            )
         game["goals"][r["goal"]] = {
             "root_for": r["root_for"],
             "against": (
@@ -78,6 +149,8 @@ def build_payload(conn, team: str, run_id: int) -> dict:
             ),
             "impact_pts": r["impact_pts"],
             "root_for_win_pct": r["root_for_win_pct"],
+            "value_if_root_for_wins": r["value_if_root_for_wins"],
+            "value_if_root_for_loses": r["value_if_root_for_loses"],
             "tier": r["tier"],
             "tier_label": config.TIER_LABELS.get(r["tier"], r["tier"]),
             "reason_code": r["reason_code"],
@@ -99,9 +172,12 @@ def build_payload(conn, team: str, run_id: int) -> dict:
         "team": {
             "abbr": teams_row[0] if teams_row else team,
             "name": teams_row[1] if teams_row else None,
+            "nick": nicknames.get(team),
             "conference": teams_row[2] if teams_row else None,
             "division": teams_row[3] if teams_row else None,
+            "record": team_record(conn, meta["season"], team),
         },
+        "nicknames": nicknames,
         "odds": odds,
         "thresholds": {
             "must_win": config.MUST_WIN_THRESHOLD,

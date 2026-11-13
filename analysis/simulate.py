@@ -201,7 +201,16 @@ def simulate(
     use_ratings: bool = True,
     jitter_sd: float | None = None,
     real_tiebreakers: bool = True,
+    force: dict[str, str] | None = None,
 ) -> SimResult:
+    """Simulate the rest of a season.
+
+    `force` pins specific games to a winner: {game_id: winning_team}. Every
+    other game is still drawn normally. This is an INTERVENTION, not a filter:
+    it overrides the result without touching the rating draw that produced it,
+    which is what makes it a clean check on the conditioning method used for
+    impacts.
+    """
     teams = load_teams(conn)
     if target not in teams:
         raise SystemExit(f"unknown team {target!r}")
@@ -278,6 +287,21 @@ def simulate(
             + rng.normal(0.0, SPREAD_SIGMA, size=(n_sims, rating_cols.size))
         )
         home_wins[:, rating_cols] = margin > 0.0
+
+    # Pin any forced outcomes AFTER the normal draw, so everything else keeps
+    # its ordinary distribution.
+    if force:
+        by_id = {g.game_id: j for j, g in enumerate(remaining)}
+        for game_id, winner in force.items():
+            if game_id not in by_id:
+                raise SystemExit(f"{game_id} is not an unplayed game")
+            j = by_id[game_id]
+            g = remaining[j]
+            if winner not in (g.home, g.away):
+                raise SystemExit(
+                    f"{winner} does not play in {game_id} ({g.away} at {g.home})"
+                )
+            home_wins[:, j] = winner == g.home
 
     wins = np.tile(base, (n_sims, 1))
     for j in range(n_games):
