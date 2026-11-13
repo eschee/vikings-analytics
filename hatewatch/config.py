@@ -26,6 +26,18 @@ DEFAULT_SEASON = 2026
 DEFAULT_SIMS = 100_000
 DEFAULT_SEED = 20260101
 
+# Retention.
+#
+# sim_runs and team_odds are kept forever: 32 rows and about 22 kB per run, so
+# a whole season of three-a-week refreshes costs roughly a megabyte, and that
+# history is what any "odds over time" chart is built from.
+#
+# game_impacts is the opposite: 17,408 rows and about 3.65 MB per run, which
+# would reach ~200 MB over a season. The site only ever renders the newest run,
+# so older impact grids are dead weight. Keeping the last few means a bad run
+# can still be compared against its predecessors before being replaced.
+IMPACT_RETENTION_RUNS = 3
+
 # ---------------------------------------------------------------------------
 # Tiers
 #

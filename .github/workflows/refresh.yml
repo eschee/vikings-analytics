@@ -1,0 +1,80 @@
+name: Refresh hatewatch data
+
+# Runs the simulation against Neon and saves a new run.
+#
+# SCHEDULE. NFL games land on Thursday, Sunday and Monday, so the refresh runs
+# the morning after each: Friday, Monday and Tuesday. Cron has no notion of
+# daylight saving, so 14:00 UTC is 8am Central in winter and 9am in summer.
+# That drift is harmless here -- the point is "the morning after", not a
+# precise hour.
+#
+# THIS REPOSITORY IS PUBLIC, so every line of this log is world-readable.
+# Nothing below echoes a secret or anything derived from one. In particular:
+#   * the connection string is passed through the environment, never on a
+#     command line (command lines show up in logs and in `ps`)
+#   * no `set -x`, no `env` dump
+#   * hatewatch.run reports connection failures without the driver's message,
+#     because that message contains the host and username
+#   * the deploy hook prints only an HTTP status code, never the response body
+
+on:
+  schedule:
+    # Mon, Tue and Fri at 14:00 UTC.
+    - cron: "0 14 * * 1,2,5"
+  workflow_dispatch:
+
+# Read-only token. This job needs nothing from the GitHub API; it only reads
+# the checked-out code.
+permissions:
+  contents: read
+
+concurrency:
+  # Two refreshes writing to the same database at once would interleave their
+  # runs. Queue instead, and never cancel one half-way through a write.
+  group: hatewatch-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install --require-hashes=false -r requirements.txt
+
+      - name: Run the simulation and save a run
+        env:
+          # The refresh_writer role. It can insert rows and replace the
+          # season's games; it cannot create or alter a table, which is why
+          # --skip-schema is passed below.
+          DATABASE_URL: ${{ secrets.NEON_REFRESH_URL }}
+        run: python -m hatewatch.run --skip-schema
+
+      - name: Tell Vercel to rebuild
+        # Skipped rather than failed when the hook is not configured, so the
+        # data refresh still counts as a success on a fresh clone.
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "${HOOK}" ]; then
+            echo "VERCEL_DEPLOY_HOOK is not set; skipping the rebuild."
+            exit 0
+          fi
+          # -o /dev/null discards the body: Vercel echoes a job id that is
+          # derived from the hook URL. Only the status code is printed.
+          code=$(curl -sS -X POST -o /dev/null -w '%{http_code}' "${HOOK}")
+          echo "Deploy hook responded: ${code}"
+          case "${code}" in
+            2*) exit 0 ;;
+            *)  echo "Deploy hook did not accept the request."; exit 1 ;;
+          esac
