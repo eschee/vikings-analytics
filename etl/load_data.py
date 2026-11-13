@@ -21,6 +21,7 @@ import nflreadpy as nfl
 import polars as pl
 import psycopg
 from dotenv import load_dotenv
+from psycopg import sql
 
 DEFAULT_SEASONS = [2022, 2023, 2024, 2025, 2026]
 SQL_DIR = os.path.join(os.path.dirname(__file__), "..", "sql")
@@ -215,9 +216,15 @@ def prepare(df: pl.DataFrame, spec: dict) -> pl.DataFrame:
 
 def copy_into(conn: psycopg.Connection, table: str, df: pl.DataFrame) -> int:
     """Stream a DataFrame into Postgres with COPY (much faster than INSERTs)."""
-    cols = ", ".join(f'"{c}"' for c in df.columns)
+    # Table and column names cannot be bound as parameters -- only values can
+    # -- so they go through sql.Identifier, which quotes and escapes them
+    # properly instead of pasting them into the statement text.
+    stmt = sql.SQL("COPY {} ({}) FROM STDIN").format(
+        sql.Identifier(table),
+        sql.SQL(", ").join(sql.Identifier(c) for c in df.columns),
+    )
     with conn.cursor() as cur:
-        with cur.copy(f"COPY {table} ({cols}) FROM STDIN") as cp:
+        with cur.copy(stmt) as cp:
             for row in df.iter_rows():
                 cp.write_row(row)
     return df.height
@@ -252,7 +259,10 @@ def load_season_table(conn: psycopg.Connection, spec: dict, seasons: list[int]) 
         # DELETE + COPY inside one transaction: a failure rolls back and leaves
         # the previously loaded season intact rather than half-deleted.
         deleted = conn.execute(
-            f"DELETE FROM {table} WHERE season = %s", (season,)
+            sql.SQL("DELETE FROM {} WHERE season = %s").format(
+                sql.Identifier(table)
+            ),
+            (season,),
         ).rowcount
         inserted = copy_into(conn, table, df)
         conn.commit()
@@ -269,7 +279,9 @@ def load_snapshot_table(conn: psycopg.Connection, spec: dict) -> None:
     }[table]
     df = prepare(loader(), spec)
 
-    conn.execute(f"TRUNCATE {table} RESTART IDENTITY")
+    conn.execute(
+        sql.SQL("TRUNCATE {} RESTART IDENTITY").format(sql.Identifier(table))
+    )
     inserted = copy_into(conn, table, df)
     conn.commit()
     print(f"  {table}: replaced, +{inserted}")
@@ -280,7 +292,7 @@ def analyze(conn: psycopg.Connection, tables: list[str]) -> None:
     yet. Without this the planner misjudges selectivity on a freshly loaded
     table and ignores the composite indexes."""
     for table in tables:
-        conn.execute(f"ANALYZE {table}")
+        conn.execute(sql.SQL("ANALYZE {}").format(sql.Identifier(table)))
     conn.commit()
     print("analyzed")
 
@@ -289,13 +301,18 @@ def row_counts(conn: psycopg.Connection) -> None:
     print("\nRow counts")
     print("-" * 46)
     for table in SPECS:
-        total = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        total = conn.execute(
+            sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
+        ).fetchone()[0]
         print(f"  {table:<12} {total:>10,}")
     print("-" * 46)
     print("\nPer season")
     for table in ("games", "plays"):
         rows = conn.execute(
-            f"SELECT season, count(*) FROM {table} GROUP BY season ORDER BY season"
+            sql.SQL(
+                "SELECT season, count(*) FROM {} GROUP BY season"
+                " ORDER BY season"
+            ).format(sql.Identifier(table))
         ).fetchall()
         detail = "  ".join(f"{s}: {c:,}" for s, c in rows)
         print(f"  {table:<7} {detail}")
