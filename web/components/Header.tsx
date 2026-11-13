@@ -38,7 +38,7 @@ export default function Header({ data }: { data: PageData }) {
           {data.teamNick} {data.recordText} · Week {data.week}
         </p>
         <span className="rounded-full border border-brand-line px-3 py-1 text-xs font-medium text-lavender">
-          Sample data
+          Updated {data.updatedLabel}
         </span>
       </div>
 

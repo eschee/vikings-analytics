@@ -22,6 +22,7 @@ export default function RootForRow({
   conference,
   expanded,
   onToggle,
+  note,
 }: {
   game: GameView;
   goal: RankableGoal;
@@ -30,6 +31,9 @@ export default function RootForRow({
   conference: string;
   expanded: boolean;
   onToggle: () => void;
+  /** Shown under the matchup when the row is listed because it matters for a
+   *  goal other than the one being ranked by. */
+  note?: string | null;
 }) {
   const view = game.goals[goal];
   const panelId = `panel-${game.gameId}`;
@@ -58,6 +62,11 @@ export default function RootForRow({
             <span className="mt-0.5 block text-sm text-muted">
               over the {view.againstNick} · {game.kickoff}
             </span>
+            {note ? (
+              <span className="mt-1 block text-sm font-medium text-brand">
+                {note}
+              </span>
+            ) : null}
           </span>
           <span className="flex shrink-0 flex-col items-end gap-1">
             <TierMeter tier={view.tier} />
