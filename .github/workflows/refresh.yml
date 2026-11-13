@@ -41,10 +41,15 @@ jobs:
 
     steps:
       - name: Check out the code
-        uses: actions/checkout@v4
+        # v7, not v4: v4 targets Node 20, which GitHub runners now force onto
+        # Node 24 with a deprecation warning. The intervening majors were the
+        # Node 24 move plus, in checkout v7, refusing to check out a fork PR
+        # on pull_request_target and workflow_run -- triggers this workflow
+        # does not use, so nothing here changes behaviour.
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -60,8 +65,25 @@ jobs:
           # The refresh_writer role. It can insert rows and replace the
           # season's games; it cannot create or alter a table, which is why
           # --skip-schema is passed below.
+          #
+          # The secret is named NEON_REFRESH_URL, matching the key in .env.
+          # The first manual run failed because the secret was then named
+          # something else: a missing secret expands to an empty string
+          # rather than failing, so the job ran with no DATABASE_URL and died
+          # further in, with an error about .env that made no sense on a CI
+          # runner. Hence the explicit check below.
           DATABASE_URL: ${{ secrets.NEON_REFRESH_URL }}
-        run: python -m hatewatch.run --skip-schema
+        run: |
+          # Check before doing anything slow, and say which secret is missing
+          # rather than letting a misleading error surface three steps later.
+          # -z tests emptiness only; the value is never printed.
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL is empty."
+            echo "Set the repository secret NEON_REFRESH_URL to the"
+            echo "refresh_writer connection string."
+            exit 1
+          fi
+          python -m hatewatch.run --skip-schema
 
       - name: Tell Vercel to rebuild
         # Skipped rather than failed when the hook is not configured, so the
