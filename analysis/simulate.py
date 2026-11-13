@@ -52,8 +52,17 @@ OTHER SIMPLIFICATIONS (deliberate for v1):
     a win.
   * Seeding uses total wins rather than win percentage, valid because every
     team finishes 17 games, which we assert.
-  * Tiebreaks are random, matching standings.py, implemented as noise below
-    1e-6 on each win total.
+  * Playoff seeding uses the real NFL tiebreakers (tiebreakers.py), the same
+    code validated against the 2022-2025 brackets. Because a simulated season
+    produces wins and losses but no scores, the points-based rungs report
+    themselves unavailable and the ladder falls through to a coin toss if the
+    first six cannot separate the teams. Scores are stripped from the ALREADY
+    PLAYED games too, so those rungs are uniformly unavailable rather than
+    being decided on a half-season of points.
+  * Draft order still breaks ties at random. The NFL uses its own draft
+    procedure there (strength of schedule, then division/conference
+    tiebreakers, then a coin toss), which is a different ladder from playoff
+    seeding and is not implemented.
   * Draft order is by record only: pick 1 to the worst record. The real order
     sends playoff teams to picks 19-32 ordered by elimination round, which this
     ignores.
@@ -71,6 +80,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import random
 import sys
 from dataclasses import dataclass
 
@@ -86,7 +96,9 @@ from standings import (
     connect,
     load_games,
     load_teams,
+    seed_conference,
 )
+from tiebreakers import Result, SeasonContext
 from win_probability import (
     RATINGS_SPREAD_RMSE,
     SPREAD_SIGMA,
@@ -124,6 +136,9 @@ class SimResult:
     base_wins: dict[str, float]
     jitter_sd: float
     used_ratings: bool
+    real_tiebreakers: bool = True
+    coin_tosses: int = 0           # iterations where the ladder ran out
+    tiebreaks_resolved: int = 0    # tied groups the ladder had to separate
 
     @property
     def playoff_odds(self) -> float:
@@ -157,6 +172,7 @@ def simulate(
     seed: int = 20260101,
     use_ratings: bool = True,
     jitter_sd: float | None = None,
+    real_tiebreakers: bool = True,
 ) -> SimResult:
     teams = load_teams(conn)
     if target not in teams:
@@ -242,46 +258,89 @@ def simulate(
         wins[~hw, away_idx[j]] += 1.0
 
     # --- seed the target's conference ---------------------------------------
-    score = wins + rng.random((n_sims, n_teams)) * TIEBREAK_NOISE
-
     conf = teams[target].conf
-    conf_divisions: dict[str, list[int]] = {}
-    for a, t in teams.items():
-        if t.conf == conf:
-            conf_divisions.setdefault(t.division, []).append(idx[a])
-    if len(conf_divisions) != DIVISION_WINNERS_PER_CONF:
-        raise SystemExit(f"{conf}: expected 4 divisions, found {len(conf_divisions)}")
-
     target_i = idx[target]
 
-    is_div_winner = np.zeros((n_sims, n_teams), dtype=bool)
-    for cols in conf_divisions.values():
-        cols_arr = np.array(cols, dtype=np.int32)
-        best = cols_arr[np.argmax(score[:, cols_arr], axis=1)]
-        is_div_winner[np.arange(n_sims), best] = True
-
-    won_division = is_div_winner[:, target_i].copy()
-
-    conf_cols = np.array(
-        [idx[a] for a, t in teams.items() if t.conf == conf], dtype=np.int32
-    )
-    conf_score = score[:, conf_cols]
-    conf_is_winner = is_div_winner[:, conf_cols]
-    wc_score = np.where(conf_is_winner, -np.inf, conf_score)
-
-    target_pos = int(np.where(conf_cols == target_i)[0][0])
-    better = (wc_score > wc_score[:, target_pos : target_pos + 1]).sum(axis=1)
-    made_wild_card = (~won_division) & (better < WILD_CARDS_PER_CONF)
-    made_playoffs = won_division | made_wild_card
-
-    # #1 seed: the best record among this conference's four division winners.
-    winner_score = np.where(conf_is_winner, conf_score, -np.inf)
-    top_team = conf_cols[np.argmax(winner_score, axis=1)]
-    won_top_seed = top_team == target_i
-
-    # Draft pick by record alone: pick 1 goes to the worst record, so the
-    # target's slot is one more than the number of teams finishing below it.
+    # Draft order: pick 1 to the worst record. Ties broken at random via tiny
+    # noise, which is NOT the NFL's draft procedure -- see the docstring.
+    score = wins + rng.random((n_sims, n_teams)) * TIEBREAK_NOISE
     draft_pick = 1 + (score < score[:, target_i : target_i + 1]).sum(axis=1)
+
+    won_division = np.zeros(n_sims, dtype=bool)
+    made_playoffs = np.zeros(n_sims, dtype=bool)
+    won_top_seed = np.zeros(n_sims, dtype=bool)
+    coin_tosses = 0
+    tiebreaks_resolved = 0
+
+    if real_tiebreakers:
+        # Scores are dropped from the played games as well, so every
+        # points-based rung is uniformly unavailable instead of being settled
+        # on a partial season. home_won carries the result instead.
+        played_results = [
+            Result(g.home, g.away, home_won=(g.winner == g.home))
+            for g in all_games
+            if g.played and g.winner is not None
+        ]
+        played_ties = [
+            Result(g.home, g.away, home_won=None)
+            for g in all_games
+            if g.played and g.winner is None
+        ]
+        fixed = played_results + played_ties
+        rem_home = [g.home for g in remaining]
+        rem_away = [g.away for g in remaining]
+        py_rng = random.Random(seed)
+
+        for s_i in range(n_sims):
+            hw = home_wins[s_i]
+            sim_results = [
+                Result(h, a, home_won=bool(w))
+                for h, a, w in zip(rem_home, rem_away, hw)
+            ]
+            ctx = SeasonContext(fixed + sim_results, teams)
+            seeding = seed_conference(ctx, teams, conf, py_rng)
+            seeds = seeding.seeds
+            won_division[s_i] = target in seeding.division_winners
+            made_playoffs[s_i] = target in seeds
+            won_top_seed[s_i] = seeds[0] == target
+            for d in seeding.decisions:
+                tiebreaks_resolved += 1
+                if d.step == "coin toss":
+                    coin_tosses += 1
+    else:
+        # The old behaviour: win total, then random.
+        conf_divisions: dict[str, list[int]] = {}
+        for a, t in teams.items():
+            if t.conf == conf:
+                conf_divisions.setdefault(t.division, []).append(idx[a])
+        if len(conf_divisions) != DIVISION_WINNERS_PER_CONF:
+            raise SystemExit(
+                f"{conf}: expected 4 divisions, found {len(conf_divisions)}"
+            )
+
+        is_div_winner = np.zeros((n_sims, n_teams), dtype=bool)
+        for cols in conf_divisions.values():
+            cols_arr = np.array(cols, dtype=np.int32)
+            best = cols_arr[np.argmax(score[:, cols_arr], axis=1)]
+            is_div_winner[np.arange(n_sims), best] = True
+
+        won_division = is_div_winner[:, target_i].copy()
+
+        conf_cols = np.array(
+            [idx[a] for a, t in teams.items() if t.conf == conf], dtype=np.int32
+        )
+        conf_score = score[:, conf_cols]
+        conf_is_winner = is_div_winner[:, conf_cols]
+        wc_score = np.where(conf_is_winner, -np.inf, conf_score)
+
+        target_pos = int(np.where(conf_cols == target_i)[0][0])
+        better = (wc_score > wc_score[:, target_pos : target_pos + 1]).sum(axis=1)
+        made_wild_card = (~won_division) & (better < WILD_CARDS_PER_CONF)
+        made_playoffs = won_division | made_wild_card
+
+        winner_score = np.where(conf_is_winner, conf_score, -np.inf)
+        top_team = conf_cols[np.argmax(winner_score, axis=1)]
+        won_top_seed = top_team == target_i
 
     return SimResult(
         season=season,
@@ -296,6 +355,9 @@ def simulate(
         base_wins={a: float(base[idx[a]]) for a in abbrs},
         jitter_sd=jitter_sd,
         used_ratings=use_ratings,
+        real_tiebreakers=real_tiebreakers,
+        coin_tosses=coin_tosses,
+        tiebreaks_resolved=tiebreaks_resolved,
     )
 
 
@@ -309,12 +371,15 @@ def main() -> int:
                     help="coin-flip unpriced games (the old v1 behaviour)")
     ap.add_argument("--jitter-sd", type=float,
                     help=f"rating jitter in points (default {JITTER_SD:.2f})")
+    ap.add_argument("--simple-tiebreakers", action="store_true",
+                    help="win total then random, instead of the NFL ladder")
     args = ap.parse_args()
 
     with connect() as conn:
         res = simulate(
             conn, args.season, args.sims, args.team, args.seed,
             use_ratings=not args.no_ratings, jitter_sd=args.jitter_sd,
+            real_tiebreakers=not args.simple_tiebreakers,
         )
         counts = method_counts(res.games)
 
@@ -324,6 +389,12 @@ def main() -> int:
           + ", ".join(f"{m}={c}" for m, c in counts.items() if c))
     print(f"  rating jitter   : {res.jitter_sd:.2f} points"
           + ("" if res.used_ratings else " (ratings off)"))
+    print(f"  tiebreakers     : "
+          + ("real NFL ladder" if res.real_tiebreakers else "simple (win%, random)"))
+    if res.real_tiebreakers and res.tiebreaks_resolved:
+        pct = 100.0 * res.coin_tosses / res.tiebreaks_resolved
+        print(f"  tiebreaks       : {res.tiebreaks_resolved:,} resolved, "
+              f"{res.coin_tosses:,} needed a coin toss ({pct:.1f}%)")
     print(f"\n  {res.target} playoff odds   : {res.playoff_odds * 100:5.1f}% "
           f"(+/- {res.standard_error() * 100:.2f} pp)")
     print(f"  {res.target} division odds  : {res.division_odds * 100:5.1f}%")
