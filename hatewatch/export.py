@@ -48,14 +48,17 @@ def format_kickoff(gameday, weekday: str | None, gametime: str | None) -> dict:
     }
     if gameday is None or not gametime:
         return out
+    # The datetime construction has to be inside the try as well: "25:00"
+    # parses to ints perfectly well and then raises "hour must be in 0..23".
+    # Catching only the parse left that case crashing the export.
     try:
         hour, minute = (int(p) for p in str(gametime).split(":")[:2])
+        eastern = dt.datetime(
+            gameday.year, gameday.month, gameday.day, hour, minute,
+            tzinfo=KICKOFF_SOURCE_TZ,
+        )
     except (ValueError, TypeError):
         return out
-    eastern = dt.datetime(
-        gameday.year, gameday.month, gameday.day, hour, minute,
-        tzinfo=KICKOFF_SOURCE_TZ,
-    )
     local = eastern.astimezone(KICKOFF_DISPLAY_TZ)
     day = local.strftime("%a")
     # %-I is "1" not "01"; strftime on macOS and Linux both accept it.
