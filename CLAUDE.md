@@ -13,6 +13,19 @@ FastAPI backend, React frontend, and a hosted Postgres (Neon) copy.
 - Only install Python packages into `.venv`, and update requirements.txt when you do.
 - Never commit `.env`, data files, or anything in .gitignore.
 
+## Security rules
+- Never commit secrets. Secrets live only in `.env`, Vercel env vars, or GitHub
+  Actions secrets. Never put a secret in a `NEXT_PUBLIC_` variable — anything with
+  that prefix is shipped to the browser.
+- Always use parameterized SQL queries. Never build SQL by joining strings.
+- The website uses a read-only database user limited to the result tables. Only
+  the data refresh job uses the write user.
+- Validate all URL parameters and inputs against allowed values; show a 404 for
+  anything else.
+- No user accounts, logins, or personal data without asking me first.
+- Before adding any new package, confirm it is real, widely used, and maintained.
+- Before I merge any PR, run a security review of the changes.
+
 ## Git workflow (you handle git)
 - Never work directly on `main`. Create a branch per feature: `feature/<short-name>`.
 - Make small commits with clear messages as you complete each piece.
