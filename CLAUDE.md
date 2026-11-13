@@ -1,5 +1,10 @@
 # Vikings Analytics — Project Rules
 
+## Start here
+Read `docs/PROJECT.md` at the start of every session. It holds the vision,
+the architecture, what is built, the decisions and why, the known limits and
+the roadmap. This file is the rules; that one is the context.
+
 ## About
 Vikings-focused NFL analytics project. Python 3.12 venv in `.venv`, local Postgres 17
 (connection string in `.env` as DATABASE_URL). Data comes from nflverse via nflreadpy
@@ -38,3 +43,18 @@ FastAPI backend, React frontend, and a hosted Postgres (Neon) copy.
 ## Working style
 - Explain what code does as you write it; I want to understand it.
 - Check real function and column names in libraries before using them.
+
+## Working with me
+- I am learning. Explain what you are doing and why, not just what changed.
+  When you make a judgement call, say what the alternative was.
+- For anything I do myself — dashboards, secrets, pasting values, clicking
+  through a UI — give me numbered, step-by-step instructions, naming the exact
+  screen and the exact field. Do not assume I know where something lives.
+- Before any change to the database, to secrets, or to deployment: show me a
+  plan and wait for my OK. That includes schema migrations, roles and grants,
+  environment variables, and anything that runs against Neon, Vercel or
+  GitHub Actions. Ordinary code changes do not need this.
+- Never print a secret value. Not a password, not a connection string, not a
+  token — not even partially, and not in a command you ask me to run. Put it
+  on the clipboard with `pbcopy`, or write it to a gitignored file, and tell
+  me only the variable name and where it goes.
