@@ -202,6 +202,8 @@ def simulate(
     jitter_sd: float | None = None,
     real_tiebreakers: bool = True,
     force: dict[str, str] | None = None,
+    as_of_week: int | None = None,
+    half_life: float | None = None,
 ) -> SimResult:
     """Simulate the rest of a season.
 
@@ -210,21 +212,41 @@ def simulate(
     it overrides the result without touching the rating draw that produced it,
     which is what makes it a clean check on the conditioning method used for
     impacts.
+
+    `as_of_week` replays a finished season as it stood before that week, for
+    backtesting (see season_backtest.py). The model then sees only results
+    before that week and betting lines for that week and the next -- the two
+    weeks of lines production has on a typical refresh -- and fits its ratings
+    from those lines alone. `half_life` overrides the ratings' recency weighting.
+    Both default to None, which is exactly the production behaviour.
     """
     teams = load_teams(conn)
     if target not in teams:
         raise SystemExit(f"unknown team {target!r}")
 
+    lines_through = None if as_of_week is None else as_of_week + 1
+
     fit = None
     if use_ratings:
-        from ratings import fit_for_season
+        from ratings import HALF_LIFE_WEEKS, fit_for_season
 
-        fit = fit_for_season(conn, season)
+        fit = fit_for_season(
+            conn,
+            season,
+            through_week=lines_through,
+            half_life=HALF_LIFE_WEEKS if half_life is None else half_life,
+        )
     if jitter_sd is None:
         jitter_sd = JITTER_SD if use_ratings else 0.0
 
-    all_games = load_games(conn, season)
-    remaining = remaining_game_probs(conn, season, fit=fit)
+    all_games = load_games(conn, season, as_of_week=as_of_week)
+    remaining = remaining_game_probs(
+        conn,
+        season,
+        fit=fit,
+        as_of_week=as_of_week,
+        lines_through_week=lines_through,
+    )
 
     # --- starting point: records already earned -----------------------------
     records = compute_records(all_games, teams)

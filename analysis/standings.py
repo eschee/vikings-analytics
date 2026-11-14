@@ -151,8 +151,16 @@ def load_teams(conn: psycopg.Connection) -> dict[str, Team]:
     return teams
 
 
-def load_games(conn: psycopg.Connection, season: int) -> list[Game]:
-    """Regular-season games only: playoff games don't count toward records."""
+def load_games(
+    conn: psycopg.Connection, season: int, as_of_week: int | None = None
+) -> list[Game]:
+    """Regular-season games only: playoff games don't count toward records.
+
+    `as_of_week` rewinds a finished season for backtesting: games from that
+    week on have their scores hidden, so they count as unplayed -- exactly
+    what the model would have seen on the Monday before that week. Omitted,
+    the database's own played/unplayed state is used, as in production.
+    """
     rows = conn.execute(
         """
         SELECT game_id, week, home_team, away_team, home_score, away_score
@@ -162,7 +170,15 @@ def load_games(conn: psycopg.Connection, season: int) -> list[Game]:
         """,
         (season,),
     ).fetchall()
-    return [Game(*r) for r in rows]
+    games = [Game(*r) for r in rows]
+    if as_of_week is not None:
+        games = [
+            Game(g.game_id, g.week, g.home, g.away, None, None)
+            if g.week >= as_of_week
+            else g
+            for g in games
+        ]
+    return games
 
 
 # ---------------------------------------------------------------------------

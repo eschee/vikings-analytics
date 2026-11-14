@@ -179,26 +179,47 @@ def remaining_game_probs(
     season: int,
     sigma: float = SPREAD_SIGMA,
     fit=None,
+    as_of_week: int | None = None,
+    lines_through_week: int | None = None,
 ) -> list[GameProb]:
     """Win probabilities for every unplayed regular-season game.
 
     Pass a RatingFit as `fit` to price games the market has not reached yet.
     Omit it to get the old behaviour, where those games are coin flips -- which
     is what makes a before/after comparison possible.
+
+    BACKTESTING. `as_of_week` treats every game from that week on as unplayed,
+    and `lines_through_week` hides betting lines for later weeks, so a finished
+    season can be priced with only what was known at the time. Both default to
+    None: the database's real played/unplayed state and every line it holds.
     """
-    rows = conn.execute(
-        """
-        SELECT game_id, week, home_team, away_team,
-               home_moneyline, away_moneyline, spread_line
-        FROM games
-        WHERE season = %s AND game_type = 'REG' AND home_score IS NULL
-        ORDER BY week, game_id
-        """,
-        (season,),
-    ).fetchall()
+    if as_of_week is None:
+        rows = conn.execute(
+            """
+            SELECT game_id, week, home_team, away_team,
+                   home_moneyline, away_moneyline, spread_line
+            FROM games
+            WHERE season = %s AND game_type = 'REG' AND home_score IS NULL
+            ORDER BY week, game_id
+            """,
+            (season,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT game_id, week, home_team, away_team,
+                   home_moneyline, away_moneyline, spread_line
+            FROM games
+            WHERE season = %s AND game_type = 'REG' AND week >= %s
+            ORDER BY week, game_id
+            """,
+            (season, as_of_week),
+        ).fetchall()
 
     out = []
     for game_id, week, home, away, h_ml, a_ml, spread in rows:
+        if lines_through_week is not None and week > lines_through_week:
+            h_ml = a_ml = spread = None  # this line did not exist yet
         rating_spread = None
         if fit is not None:
             try:
