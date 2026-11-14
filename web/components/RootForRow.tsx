@@ -1,22 +1,38 @@
 "use client";
 
+import GoalShifts from "./GoalShifts";
+import RootMeter from "./RootMeter";
 import TierMeter from "./TierMeter";
-import { points, pct } from "@/lib/format";
+import { pct } from "@/lib/format";
 import { reasonSentence, winChancePhrase } from "@/lib/reasons";
-import { RANKABLE_GOALS, type GameView, type RankableGoal } from "@/lib/types";
+import {
+  GOAL_LABELS,
+  OVERALL_WEIGHTS,
+  RANKABLE_GOALS,
+  type GameView,
+  type Ranking,
+} from "@/lib/types";
 
 /** One row of the "Root for" list.
  *
- *  Collapsed it shows only who to root for, who they are playing and the tier
- *  meter -- no numbers, which keeps the list scannable. Everything numeric
- *  lives in the expanded panel.
+ *  Collapsed it shows who to root for, who they are playing and a meter. In
+ *  the Overall ranking that is the Root meter -- one combined number -- plus
+ *  which goal the game moves most. Ranked by a single goal it is that goal's
+ *  three-dot tier, as before.
+ *
+ *  Expanded, it shows the reason in plain English and the GoalShifts table:
+ *  each goal's odds now, and if either team wins.
  *
  *  The whole summary is a <button> carrying aria-expanded and aria-controls,
  *  so the state is announced and the panel is associated with its trigger. */
 
+const WEIGHTS_TEXT = RANKABLE_GOALS.map(
+  (g) => `${GOAL_LABELS[g].toLowerCase()} ${Math.round(OVERALL_WEIGHTS[g] * 100)}%`,
+).join(", ");
+
 export default function RootForRow({
   game,
-  goal,
+  ranking,
   teamNick,
   division,
   conference,
@@ -25,7 +41,7 @@ export default function RootForRow({
   note,
 }: {
   game: GameView;
-  goal: RankableGoal;
+  ranking: Ranking;
   teamNick: string;
   division: string;
   conference: string;
@@ -35,14 +51,24 @@ export default function RootForRow({
    *  goal other than the one being ranked by. */
   note?: string | null;
 }) {
-  const view = game.goals[goal];
+  const overall = game.overall;
+  const isOverall = ranking === "overall";
+  const goalView = isOverall ? null : game.goals[ranking];
+
+  const rootFor = goalView?.rootFor ?? overall.rootFor;
+  const rootForNick = goalView?.rootForNick ?? overall.rootForNick;
+  const againstNick = goalView?.againstNick ?? overall.againstNick;
+  const winPct = goalView?.rootForWinPct ?? overall.rootForWinPct;
+  // The reason should explain the call shown on the row.
+  const reasonView = goalView ?? game.goals[overall.reasonGoal];
+
+  const mostly =
+    isOverall && overall.biggestGoal
+      ? `Moves your ${GOAL_LABELS[overall.biggestGoal].toLowerCase()} odds most`
+      : null;
+
   const panelId = `panel-${game.gameId}`;
   const buttonId = `row-${game.gameId}`;
-
-  // Where the goals point at different teams, say so once, in the panel.
-  const disagreeing = RANKABLE_GOALS.filter(
-    (g) => game.goals[g].rootFor !== view.rootFor,
-  );
 
   return (
     <li className="rounded-2xl border border-line bg-card">
@@ -57,11 +83,16 @@ export default function RootForRow({
         >
           <span className="min-w-0">
             <span className="font-display block text-xl font-bold text-brand">
-              {view.rootForNick}
+              {rootForNick}
             </span>
             <span className="mt-0.5 block text-sm text-muted">
-              over the {view.againstNick} · {game.kickoff}
+              over the {againstNick} · {game.kickoff}
             </span>
+            {mostly ? (
+              <span className="mt-1 block text-sm font-medium text-brand">
+                {mostly}
+              </span>
+            ) : null}
             {note ? (
               <span className="mt-1 block text-sm font-medium text-brand">
                 {note}
@@ -69,10 +100,19 @@ export default function RootForRow({
             ) : null}
           </span>
           <span className="flex shrink-0 flex-col items-end gap-1">
-            <TierMeter tier={view.tier} />
-            <span className="text-sm font-semibold text-brand">
-              {view.tierLabel}
-            </span>
+            {goalView ? (
+              <>
+                <TierMeter tier={goalView.tier} />
+                <span className="text-sm font-semibold text-brand">
+                  {goalView.tierLabel}
+                </span>
+              </>
+            ) : (
+              <>
+                <RootMeter score={overall.score} />
+                <span className="text-xs text-muted">Root score</span>
+              </>
+            )}
           </span>
         </button>
       </h3>
@@ -82,42 +122,31 @@ export default function RootForRow({
         role="region"
         aria-labelledby={buttonId}
         hidden={!expanded}
-        className="border-t border-line px-5 py-4"
+        className="space-y-4 border-t border-line px-5 py-4"
       >
         <p className="text-sm leading-relaxed text-muted">
-          {reasonSentence(view, teamNick, division, conference)}
+          {reasonSentence(reasonView, teamNick, division, conference)}
         </p>
 
-        <dl className="mt-4 space-y-1.5">
-          {RANKABLE_GOALS.map((g) => {
-            const gv = game.goals[g];
-            return (
-              <div key={g} className="flex items-baseline justify-between gap-3">
-                <dt className="text-sm text-muted">{gv.label}</dt>
-                <dd className="text-sm font-semibold text-brand">
-                  {gv.tier === "doesnt_matter"
-                    ? "No real effect"
-                    : `${gv.rootForNick} ${points(gv.impact)}`}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
+        <GoalShifts
+          game={game}
+          rootAbbr={rootFor}
+          rootNick={rootForNick}
+          againstNick={againstNick}
+        />
 
-        <p className="mt-4 text-sm text-muted">
+        <p className="text-sm text-muted">
           <span className="font-semibold text-brand">
-            {winChancePhrase(view.rootForWinPct)}:
+            {winChancePhrase(winPct)}:
           </span>{" "}
-          the {view.rootForNick} have a {pct(view.rootForWinPct)} chance to win.
+          the {rootForNick} have a {pct(winPct)} chance to win.
         </p>
 
-        {disagreeing.length > 0 ? (
-          <p className="mt-3 rounded-xl bg-page px-3 py-2 text-sm text-muted">
-            These goals disagree —{" "}
-            {disagreeing
-              .map((g) => `${game.goals[g].label} wants the ${game.goals[g].rootForNick}`)
-              .join(", ")}
-            .
+        {isOverall ? (
+          <p className="text-xs text-muted">
+            The Root score blends all three swings, weighted {WEIGHTS_TEXT}.
+            Swings inside simulation noise count as zero, and goals that want
+            opposite teams partly cancel.
           </p>
         ) : null}
       </div>

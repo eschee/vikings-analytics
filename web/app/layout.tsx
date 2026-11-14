@@ -36,9 +36,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`}>
       <body className="min-h-dvh antialiased">
-        {/* Mobile-first: the column is capped at 480px and centred, so the
-            phone layout is the real layout and desktop just adds margin. */}
-        <div className="mx-auto w-full max-w-[480px] bg-page shadow-sm">
+        {/* Mobile-first: a single 480px column is the real layout. From the
+            lg breakpoint (1024px, a laptop) the page widens to 1100px and the
+            Guide splits into two columns; see Guide.tsx. */}
+        <div className="mx-auto w-full max-w-[480px] bg-page shadow-sm lg:max-w-[1100px]">
           {children}
         </div>
       </body>

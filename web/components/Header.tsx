@@ -46,6 +46,19 @@ export default function Header({ data }: { data: PageData }) {
         <span className="text-gold">{headlinePct}</span> chance to make the
         playoffs
       </h1>
+
+      {/* The other two goals, so every "now" number in the detail tables
+          has a visible starting point. */}
+      <dl className="mt-3 flex gap-5 text-sm">
+        <div className="flex items-baseline gap-1.5">
+          <dt className="text-lavender">Division</dt>
+          <dd className="font-semibold">{Math.round(data.divisionPct)}%</dd>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <dt className="text-lavender">#1 seed</dt>
+          <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
+        </div>
+      </dl>
     </header>
   );
 }

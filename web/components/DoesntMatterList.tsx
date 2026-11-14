@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { GameView, RankableGoal } from "@/lib/types";
+import type { GameView } from "@/lib/types";
 
 /** The games below the noise floor, collapsed by default.
  *
@@ -10,13 +10,7 @@ import type { GameView, RankableGoal } from "@/lib/types";
  *  fan can confirm a game was considered and judged not to matter, instead of
  *  wondering whether it was missed. */
 
-export default function DoesntMatterList({
-  games,
-  goal,
-}: {
-  games: GameView[];
-  goal: RankableGoal;
-}) {
+export default function DoesntMatterList({ games }: { games: GameView[] }) {
   const [open, setOpen] = useState(false);
   if (games.length === 0) return null;
 
@@ -42,20 +36,17 @@ export default function DoesntMatterList({
         hidden={!open}
         className="border-t border-line px-5 py-3"
       >
-        {games.map((game) => {
-          const view = game.goals[goal];
-          return (
-            <li
-              key={game.gameId}
-              className="flex items-baseline justify-between gap-3 py-1.5 text-sm"
-            >
-              <span className="text-brand">
-                {game.awayNick} at {game.homeNick}
-              </span>
-              <span className="shrink-0 text-muted">{game.kickoff}</span>
-            </li>
-          );
-        })}
+        {games.map((game) => (
+          <li
+            key={game.gameId}
+            className="flex items-baseline justify-between gap-3 py-1.5 text-sm"
+          >
+            <span className="text-brand">
+              {game.awayNick} at {game.homeNick}
+            </span>
+            <span className="shrink-0 text-muted">{game.kickoff}</span>
+          </li>
+        ))}
       </ul>
     </section>
   );

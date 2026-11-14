@@ -15,6 +15,7 @@
   --color-chip-win: #ede9f7;
   --color-chip-lose: #fbeae1;
   --color-lose-text: #b3400a;    /* 4.9:1 on the peach chip */
+  --color-up: #1f7a45;           /* odds going up, 5.4:1 on white */
   --color-dot-on: #5b3fa8;
   --color-dot-off: #ded6ef;
 

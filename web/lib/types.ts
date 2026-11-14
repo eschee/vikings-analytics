@@ -97,6 +97,50 @@ export interface GoalView {
   subjectNick: string | null;
 }
 
+/** What the list can be ranked by: one goal, or all three combined. */
+export type Ranking = RankableGoal | "overall";
+
+/** How much each goal counts toward the combined Root score. They sum to 1,
+ *  so the score reads as a weighted average swing in percentage points.
+ *  Playoffs leads because getting in is the season; the division adds a home
+ *  game; the #1 seed adds the bye. Tune here -- nothing else hard-codes them. */
+export const OVERALL_WEIGHTS: Record<RankableGoal, number> = {
+  playoffs: 0.5,
+  division: 0.3,
+  top_seed: 0.2,
+};
+
+/** One goal's odds, oriented to the team the overall score says to root for. */
+export interface GoalShift {
+  goal: RankableGoal;
+  label: string;
+  /** The team's odds right now, before this game is played. */
+  current: number;
+  /** The team's odds if the overall root-for team wins / loses. Null for
+   *  runs saved before these were stored. */
+  ifRootWins: number | null;
+  ifRootLoses: number | null;
+  /** False when this goal's swing is inside simulation noise. */
+  real: boolean;
+}
+
+/** All three goals folded into one number. */
+export interface OverallView {
+  rootFor: string;
+  rootForNick: string;
+  againstNick: string;
+  /** Weighted swing in points, 0 when every goal is inside the noise. */
+  score: number;
+  /** Chance the root-for team wins the game. */
+  rootForWinPct: number;
+  /** The goal this game moves the most (largest real swing), or null. */
+  biggestGoal: RankableGoal | null;
+  /** The goal whose reason best explains the pick: the largest weighted
+   *  contribution pointing the same way as the overall call. */
+  reasonGoal: RankableGoal;
+  shifts: GoalShift[];
+}
+
 export interface GameView {
   gameId: string;
   awayNick: string;
@@ -106,6 +150,7 @@ export interface GameView {
   isOwnGame: boolean;
   /** One entry per rankable goal. */
   goals: Record<RankableGoal, GoalView>;
+  overall: OverallView;
 }
 
 export interface PageData {
@@ -121,10 +166,7 @@ export interface PageData {
   divisionPct: number;
   topSeedPct: number;
   updatedLabel: string;
-  defaultGoal: RankableGoal;
-  /** Set when the default was switched away from Playoffs because the team is
-   *  already essentially in. */
-  defaultGoalNote: string | null;
+  defaultGoal: Ranking;
   ownGame: GameView | null;
   games: GameView[];
 }

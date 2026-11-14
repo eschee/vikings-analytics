@@ -84,7 +84,7 @@ export default function OtherGoalsList({
             <RootForRow
               key={game.gameId}
               game={game}
-              goal={other ?? selectedGoal}
+              ranking={other ?? selectedGoal}
               teamNick={teamNick}
               division={division}
               conference={conference}
