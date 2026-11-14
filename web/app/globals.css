@@ -15,8 +15,14 @@
   --color-chip-win: #ede9f7;
   --color-chip-lose: #fbeae1;
   --color-lose-text: #b3400a;    /* 4.9:1 on the peach chip */
+  --color-up: #1f7a45;           /* odds going up, 5.4:1 on white */
   --color-dot-on: #5b3fa8;
   --color-dot-off: #ded6ef;
+
+  /* The two-column layout starts at 900px rather than Tailwind's default
+     1024px, so a Mac browser window that is not full-screen (often 900-1000px
+     wide) gets it too. Every `lg:` class in the app follows this value. */
+  --breakpoint-lg: 56.25rem;
 
   --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;

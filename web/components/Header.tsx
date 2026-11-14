@@ -9,7 +9,11 @@ export default function Header({ data }: { data: PageData }) {
   const headlinePct = `${Math.round(data.playoffPct)}%`;
 
   return (
-    <header className="bg-brand px-5 pt-5 pb-7 text-white">
+    // The purple band always spans the window. The inner div limits the
+    // content with exactly the same widths and padding as <main> in
+    // Guide.tsx, so the header text lines up with the cards below.
+    <header className="bg-brand pt-5 pb-7 text-white lg:pt-6 lg:pb-9">
+      <div className="mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
       <div className="flex items-center justify-between gap-3">
         <span className="font-display text-xl font-bold tracking-[0.14em]">
           HATEWATCH
@@ -46,6 +50,20 @@ export default function Header({ data }: { data: PageData }) {
         <span className="text-gold">{headlinePct}</span> chance to make the
         playoffs
       </h1>
+
+      {/* The other two goals, so every "now" number in the detail tables
+          has a visible starting point. */}
+      <dl className="mt-3 flex gap-5 text-sm">
+        <div className="flex items-baseline gap-1.5">
+          <dt className="text-lavender">Division</dt>
+          <dd className="font-semibold">{Math.round(data.divisionPct)}%</dd>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <dt className="text-lavender">#1 seed</dt>
+          <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
+        </div>
+      </dl>
+      </div>
     </header>
   );
 }

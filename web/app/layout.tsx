@@ -36,11 +36,14 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`}>
       <body className="min-h-dvh antialiased">
-        {/* Mobile-first: the column is capped at 480px and centred, so the
-            phone layout is the real layout and desktop just adds margin. */}
-        <div className="mx-auto w-full max-w-[480px] bg-page shadow-sm">
-          {children}
-        </div>
+        {/* No outer box at any width: the purple header band and the page
+            background both run edge to edge, so the page always fills the
+            window. Only the CONTENT is width-limited, by matching wrappers in
+            Header.tsx and Guide.tsx so their edges line up:
+              under 900px  one column, at most 600px wide, centred
+              900px+ (lg)  two columns, at most 1180px wide, centred
+            (lg is moved from Tailwind's 1024px to 900px in globals.css.) */}
+        {children}
       </body>
     </html>
   );

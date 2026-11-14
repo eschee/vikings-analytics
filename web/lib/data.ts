@@ -22,19 +22,18 @@ import {
 } from "./db";
 import {
   GOAL_LABELS,
+  OVERALL_WEIGHTS,
   RANKABLE_GOALS,
   type GameView,
+  type GoalShift,
   type GoalView,
+  type OverallView,
   type PageData,
   type RankableGoal,
   type Tier,
 } from "./types";
 
 export { MissingDatabaseError };
-
-/** Above this, "will they make the playoffs" has stopped being the
- *  interesting question, so the page ranks by the division race instead. */
-export const PLAYOFFS_SETTLED_PCT = 97;
 
 /** Display labels. These mirror TIER_LABELS and REASON_LABELS in
  *  hatewatch/config.py; the database stores the codes, not the wording. */
@@ -71,6 +70,97 @@ export async function teamAllowlist(): Promise<string[]> {
 
 function num(value: string | number | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
+}
+
+/** Fold one game's three goals into a single Root score.
+ *
+ *  The goals can point at different teams -- a Rams loss helps the wild-card
+ *  race while a Rams win can help the division -- so each swing is first given
+ *  a sign: positive when it favours the HOME team, negative for the away team.
+ *  The weighted sum then says both who to root for (its sign) and how much
+ *  (its size). Conflicting goals partly cancel, which is the honest answer:
+ *  a game that helps one goal and hurts another matters less overall.
+ *
+ *  A goal whose swing is inside the noise floor contributes nothing. Without
+ *  that, fourteen games' worth of noise would add up into small fake scores.
+ */
+function buildOverall(
+  game: Omit<GameView, "overall">,
+  homeAbbr: string,
+  awayAbbr: string,
+  nicks: Record<string, string>,
+  current: Record<RankableGoal, number>,
+): OverallView {
+  const real = (g: RankableGoal) => game.goals[g].tier !== "doesnt_matter";
+  const towardHome = (g: RankableGoal) =>
+    game.goals[g].rootFor === homeAbbr ? 1 : -1;
+
+  const signed = RANKABLE_GOALS.reduce(
+    (sum, g) =>
+      real(g)
+        ? sum + towardHome(g) * game.goals[g].impact * OVERALL_WEIGHTS[g]
+        : sum,
+    0,
+  );
+  const rootHome = signed >= 0;
+
+  const homeTeam = { abbr: homeAbbr, nick: nicks[homeAbbr] ?? homeAbbr };
+  const awayTeam = { abbr: awayAbbr, nick: nicks[awayAbbr] ?? awayAbbr };
+  const root = rootHome ? homeTeam : awayTeam;
+  const against = rootHome ? awayTeam : homeTeam;
+
+  // Every goal's numbers, flipped where that goal roots for the other side,
+  // so "if they win" always means the overall pick winning.
+  const shifts: GoalShift[] = RANKABLE_GOALS.map((g) => {
+    const v = game.goals[g];
+    const same = (v.rootFor === homeAbbr) === rootHome;
+    return {
+      goal: g,
+      label: GOAL_LABELS[g],
+      current: current[g],
+      ifRootWins: same ? v.valueIfWin : v.valueIfLose,
+      ifRootLoses: same ? v.valueIfLose : v.valueIfWin,
+      real: real(g),
+    };
+  });
+
+  const realGoals = RANKABLE_GOALS.filter(real);
+  const biggestGoal =
+    realGoals.length === 0
+      ? null
+      : realGoals.reduce((a, b) =>
+          game.goals[b].impact > game.goals[a].impact ? b : a,
+        );
+
+  // The reason shown should explain the call actually made, so take it from
+  // the goal pushing hardest in the chosen direction.
+  const agreeing = realGoals.filter(
+    (g) => (game.goals[g].rootFor === homeAbbr) === rootHome,
+  );
+  const reasonGoal =
+    agreeing.length === 0
+      ? (biggestGoal ?? "playoffs")
+      : agreeing.reduce((a, b) =>
+          game.goals[b].impact * OVERALL_WEIGHTS[b] >
+          game.goals[a].impact * OVERALL_WEIGHTS[a]
+            ? b
+            : a,
+        );
+
+  const pv = game.goals.playoffs;
+  const rootForWinPct =
+    pv.rootFor === root.abbr ? pv.rootForWinPct : 100 - pv.rootForWinPct;
+
+  return {
+    rootFor: root.abbr,
+    rootForNick: root.nick,
+    againstNick: against.nick,
+    score: Math.abs(signed),
+    rootForWinPct,
+    biggestGoal,
+    reasonGoal,
+    shifts,
+  };
 }
 
 export async function loadPageData(teamParam: string): Promise<LoadResult> {
@@ -130,7 +220,9 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
   ]);
 
   // Group the flat impact rows into one entry per game, with its goals.
-  const byGame = new Map<string, GameView>();
+  // `overall` is filled in once all three goals are present.
+  const byGame = new Map<string, Omit<GameView, "overall">>();
+  const sides = new Map<string, { home: string; away: string }>();
   for (const row of impacts) {
     const goal = row.goal as RankableGoal;
     if (!RANKABLE_GOALS.includes(goal)) continue;
@@ -147,6 +239,7 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
         goals: {} as Record<RankableGoal, GoalView>,
       };
       byGame.set(row.game_id, game);
+      sides.set(row.game_id, { home: row.home_team, away: row.away_team });
     }
 
     const tier = row.tier as Tier;
@@ -177,13 +270,20 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     };
   }
 
-  // Drop any game missing one of the three goals rather than render blanks.
-  const views = [...byGame.values()].filter((g) =>
-    RANKABLE_GOALS.every((k) => g.goals[k] !== undefined),
-  );
-
   const playoffPct = num(odds?.playoff_pct);
-  const settled = playoffPct >= PLAYOFFS_SETTLED_PCT;
+  const current: Record<RankableGoal, number> = {
+    playoffs: playoffPct,
+    division: num(odds?.division_pct),
+    top_seed: num(odds?.top_seed_pct),
+  };
+
+  // Drop any game missing one of the three goals rather than render blanks.
+  const views: GameView[] = [...byGame.values()]
+    .filter((g) => RANKABLE_GOALS.every((k) => g.goals[k] !== undefined))
+    .map((g) => {
+      const s = sides.get(g.gameId)!;
+      return { ...g, overall: buildOverall(g, s.home, s.away, nicks, current) };
+    });
 
   return {
     ok: true,
@@ -200,10 +300,10 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     divisionPct: num(odds?.division_pct),
     topSeedPct: num(odds?.top_seed_pct),
     updatedLabel: run.updated,
-    defaultGoal: settled ? "division" : "playoffs",
-    defaultGoalNote: settled
-      ? `A playoff spot is all but locked at ${playoffPct.toFixed(0)}%, so games are ranked by the division race instead.`
-      : null,
+    // The combined score already discounts a settled race -- a locked playoff
+    // spot barely moves, so it contributes little -- which retires the old
+    // "switch to division at 97%" rule.
+    defaultGoal: "overall",
     ownGame: views.find((g) => g.isOwnGame) ?? null,
     games: views.filter((g) => !g.isOwnGame),
     },

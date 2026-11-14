@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export default function HowThisWorks() {
   return (
-    <main className="px-5 py-8">
+    <main className="mx-auto max-w-[600px] px-5 py-8">
       <h1 className="font-display text-3xl font-bold text-brand">
         How this works
       </h1>

@@ -8,104 +8,39 @@ import GoalSelector from "./GoalSelector";
 import RootForRow from "./RootForRow";
 import ShareButton from "./ShareButton";
 import YourGameCard from "./YourGameCard";
-import { RANKABLE_GOALS, type PageData, type RankableGoal } from "@/lib/types";
+import {
+  RANKABLE_GOALS,
+  type GameView,
+  type PageData,
+  type Ranking,
+} from "@/lib/types";
 
-/** Everything interactive lives here: the chosen ranking goal and which row
- *  is open. The server does all the data work and hands this a small, finished
- *  view model, so switching goals is instant and nothing refetches.
+/** Everything interactive lives here: the chosen ranking and which row is
+ *  open. The server does all the data work and hands this a small, finished
+ *  view model, so switching rankings is instant and nothing refetches.
  *
  *  One row is open at a time. With fourteen games an accordion keeps the list
- *  scannable; opening a second row closes the first. */
+ *  scannable; opening a second row closes the first.
+ *
+ *  LAYOUT. On a phone everything stacks: your game, the list, then the share
+ *  button and footer, in a column of at most 600px. From the `lg` breakpoint
+ *  (900px here -- see globals.css) it becomes two columns centred at up to
+ *  1180px, split 2:3 so they share whatever width the window has. The left
+ *  holds your game, the share button and footer, and stays put (sticky)
+ *  while the list on the right scrolls past it.
+ *
+ *  The share button and footer therefore appear in two places in the markup
+ *  -- in the left column (shown on lg only) and at the bottom (hidden on lg).
+ *  Exactly one is ever displayed, and `display: none` also removes the other
+ *  from the accessibility tree, so nobody hears it twice. The alternative,
+ *  reordering one copy with CSS grid, would make the visual order differ from
+ *  the reading order on one of the two layouts. */
 
-export default function Guide({ data }: { data: PageData }) {
-  const [goal, setGoal] = useState<RankableGoal>(data.defaultGoal);
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  // Three buckets, not two. A game only reaches "doesn't matter" when it is
-  // below the noise floor for EVERY goal. One that is quiet for the selected
-  // goal but loud for another still belongs on the page -- it just belongs
-  // under its own heading, so the main list stays about what was asked for.
-  const { matters, otherGoals, ignorable } = useMemo(() => {
-    const sorted = [...data.games].sort(
-      (a, b) => b.goals[goal].impact - a.goals[goal].impact,
-    );
-    const matters = sorted.filter((g) => g.goals[goal].tier !== "doesnt_matter");
-    const rest = sorted.filter((g) => g.goals[goal].tier === "doesnt_matter");
-    const mattersElsewhere = (g: (typeof rest)[number]) =>
-      RANKABLE_GOALS.some((k) => g.goals[k].tier !== "doesnt_matter");
-    return {
-      matters,
-      otherGoals: rest.filter(mattersElsewhere),
-      ignorable: rest.filter((g) => !mattersElsewhere(g)),
-    };
-  }, [data.games, goal]);
-
+function Extras() {
   return (
-    <main className="space-y-6 px-5 py-6">
-      {data.ownGame ? (
-        <YourGameCard
-          game={data.ownGame}
-          teamAbbr={data.teamAbbr}
-          teamNick={data.teamNick}
-          goal={goal}
-        />
-      ) : null}
-
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-2xl font-bold text-brand">
-            Root for
-          </h2>
-          <GoalSelector value={goal} onChange={setGoal} />
-        </div>
-
-        {/* Shown only when the default was switched because a playoff spot is
-            already effectively locked. */}
-        {data.defaultGoalNote && goal === data.defaultGoal ? (
-          <p className="rounded-xl border border-line bg-card px-4 py-3 text-sm text-muted">
-            {data.defaultGoalNote}
-          </p>
-        ) : null}
-
-        {matters.length > 0 ? (
-          <ul className="space-y-3">
-            {matters.map((game) => (
-              <RootForRow
-                key={game.gameId}
-                game={game}
-                goal={goal}
-                teamNick={data.teamNick}
-                division={data.division}
-                conference={data.conference}
-                expanded={openId === game.gameId}
-                onToggle={() =>
-                  setOpenId((cur) => (cur === game.gameId ? null : game.gameId))
-                }
-              />
-            ))}
-          </ul>
-        ) : (
-          <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm text-muted">
-            No other game this week moves your odds beyond simulation noise.
-          </p>
-        )}
-      </section>
-
-      <OtherGoalsList
-        games={otherGoals}
-        selectedGoal={goal}
-        teamNick={data.teamNick}
-        division={data.division}
-        conference={data.conference}
-        openId={openId}
-        onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
-      />
-
-      <DoesntMatterList games={ignorable} goal={goal} />
-
+    <>
       <ShareButton />
-
-      {/* The timestamp lives in the header now, so the footer does not repeat
+      {/* The timestamp lives in the header, so the footer does not repeat
           it. */}
       <footer className="pb-4 text-center">
         <a
@@ -115,6 +50,112 @@ export default function Guide({ data }: { data: PageData }) {
           How this works
         </a>
       </footer>
+    </>
+  );
+}
+
+function strength(game: GameView, ranking: Ranking): number {
+  return ranking === "overall"
+    ? game.overall.score
+    : game.goals[ranking].impact;
+}
+
+function matters(game: GameView, ranking: Ranking): boolean {
+  return ranking === "overall"
+    ? game.overall.score > 0
+    : game.goals[ranking].tier !== "doesnt_matter";
+}
+
+export default function Guide({ data }: { data: PageData }) {
+  const [ranking, setRanking] = useState<Ranking>(data.defaultGoal);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
+
+  // Three buckets, not two. A game only reaches "doesn't matter" when it is
+  // below the noise floor for EVERY goal. One that is quiet for the selected
+  // goal but loud for another still belongs on the page -- it just belongs
+  // under its own heading. In the Overall ranking that middle bucket is
+  // always empty: a game loud for any goal already has a Root score.
+  const { listed, otherGoals, ignorable } = useMemo(() => {
+    const sorted = [...data.games].sort(
+      (a, b) => strength(b, ranking) - strength(a, ranking),
+    );
+    const listed = sorted.filter((g) => matters(g, ranking));
+    const rest = sorted.filter((g) => !matters(g, ranking));
+    const mattersElsewhere = (g: GameView) =>
+      RANKABLE_GOALS.some((k) => g.goals[k].tier !== "doesnt_matter");
+    return {
+      listed,
+      otherGoals: rest.filter(mattersElsewhere),
+      ignorable: rest.filter((g) => !mattersElsewhere(g)),
+    };
+  }, [data.games, ranking]);
+
+  return (
+    <main className="mx-auto max-w-[600px] space-y-6 px-5 py-6 lg:grid lg:max-w-[1180px] lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start lg:gap-8 lg:space-y-0 lg:px-8 lg:py-8">
+      <aside className="space-y-6 lg:sticky lg:top-8">
+        {data.ownGame ? (
+          <YourGameCard
+            game={data.ownGame}
+            teamAbbr={data.teamAbbr}
+            teamNick={data.teamNick}
+            ranking={ranking}
+          />
+        ) : null}
+        <div className="hidden space-y-6 lg:block">
+          <Extras />
+        </div>
+      </aside>
+
+      <div className="space-y-6">
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-2xl font-bold text-brand">
+              Root for
+            </h2>
+            <GoalSelector value={ranking} onChange={setRanking} />
+          </div>
+
+          {listed.length > 0 ? (
+            <ul className="space-y-3">
+              {listed.map((game) => (
+                <RootForRow
+                  key={game.gameId}
+                  game={game}
+                  ranking={ranking}
+                  teamNick={data.teamNick}
+                  division={data.division}
+                  conference={data.conference}
+                  expanded={openId === game.gameId}
+                  onToggle={() => toggle(game.gameId)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm text-muted">
+              No other game this week moves your odds beyond simulation noise.
+            </p>
+          )}
+        </section>
+
+        {ranking !== "overall" ? (
+          <OtherGoalsList
+            games={otherGoals}
+            selectedGoal={ranking}
+            teamNick={data.teamNick}
+            division={data.division}
+            conference={data.conference}
+            openId={openId}
+            onToggle={toggle}
+          />
+        ) : null}
+
+        <DoesntMatterList games={ignorable} />
+      </div>
+
+      <div className="space-y-6 lg:hidden">
+        <Extras />
+      </div>
     </main>
   );
 }
