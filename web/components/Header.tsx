@@ -9,7 +9,10 @@ export default function Header({ data }: { data: PageData }) {
   const headlinePct = `${Math.round(data.playoffPct)}%`;
 
   return (
-    <header className="bg-brand px-5 pt-5 pb-7 text-white">
+    // The purple band spans the window; the inner div centres the content at
+    // the same 1180px as the Guide below, so their left edges line up.
+    <header className="bg-brand px-5 pt-5 pb-7 text-white lg:px-8 lg:pt-6 lg:pb-9">
+      <div className="lg:mx-auto lg:max-w-[1180px]">
       <div className="flex items-center justify-between gap-3">
         <span className="font-display text-xl font-bold tracking-[0.14em]">
           HATEWATCH
@@ -59,6 +62,7 @@ export default function Header({ data }: { data: PageData }) {
           <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
         </div>
       </dl>
+      </div>
     </header>
   );
 }

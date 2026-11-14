@@ -22,12 +22,36 @@ import {
  *  One row is open at a time. With fourteen games an accordion keeps the list
  *  scannable; opening a second row closes the first.
  *
- *  LAYOUT. On a phone everything stacks in one column. From the `lg`
- *  breakpoint (1024px) it becomes two: your game and the footer on the left,
- *  the Root-for list on the right. The three blocks are placed into grid
- *  cells explicitly, so the phone order (your game, list, footer) stays the
- *  source order -- screen readers and keyboard users get the same sequence on
- *  every screen size. */
+ *  LAYOUT. On a phone everything stacks: your game, the list, then the share
+ *  button and footer. From the `lg` breakpoint (1024px, any Mac) it becomes
+ *  two columns centred at 1180px: a 420px left column holding your game, the
+ *  share button and footer, which stays put (sticky) while the list on the
+ *  right scrolls past it.
+ *
+ *  The share button and footer therefore appear in two places in the markup
+ *  -- in the left column (shown on lg only) and at the bottom (hidden on lg).
+ *  Exactly one is ever displayed, and `display: none` also removes the other
+ *  from the accessibility tree, so nobody hears it twice. The alternative,
+ *  reordering one copy with CSS grid, would make the visual order differ from
+ *  the reading order on one of the two layouts. */
+
+function Extras() {
+  return (
+    <>
+      <ShareButton />
+      {/* The timestamp lives in the header, so the footer does not repeat
+          it. */}
+      <footer className="pb-4 text-center">
+        <a
+          href="/how-it-works"
+          className="inline-block text-sm font-medium text-brand underline underline-offset-4"
+        >
+          How this works
+        </a>
+      </footer>
+    </>
+  );
+}
 
 function strength(game: GameView, ranking: Ranking): number {
   return ranking === "overall"
@@ -67,8 +91,8 @@ export default function Guide({ data }: { data: PageData }) {
   }, [data.games, ranking]);
 
   return (
-    <main className="space-y-6 px-5 py-6 lg:grid lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-8 lg:gap-y-6 lg:space-y-0 lg:px-8 lg:py-8">
-      <div className="lg:col-start-1 lg:row-start-1">
+    <main className="space-y-6 px-5 py-6 lg:mx-auto lg:grid lg:max-w-[1180px] lg:grid-cols-[420px_minmax(0,1fr)] lg:items-start lg:gap-10 lg:space-y-0 lg:px-8 lg:py-8">
+      <aside className="space-y-6 lg:sticky lg:top-8">
         {data.ownGame ? (
           <YourGameCard
             game={data.ownGame}
@@ -77,9 +101,12 @@ export default function Guide({ data }: { data: PageData }) {
             ranking={ranking}
           />
         ) : null}
-      </div>
+        <div className="hidden space-y-6 lg:block">
+          <Extras />
+        </div>
+      </aside>
 
-      <div className="space-y-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+      <div className="space-y-6">
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-display text-2xl font-bold text-brand">
@@ -125,19 +152,8 @@ export default function Guide({ data }: { data: PageData }) {
         <DoesntMatterList games={ignorable} />
       </div>
 
-      <div className="space-y-6 lg:col-start-1 lg:row-start-2">
-        <ShareButton />
-
-        {/* The timestamp lives in the header, so the footer does not repeat
-            it. */}
-        <footer className="pb-4 text-center">
-          <a
-            href="/how-it-works"
-            className="inline-block text-sm font-medium text-brand underline underline-offset-4"
-          >
-            How this works
-          </a>
-        </footer>
+      <div className="space-y-6 lg:hidden">
+        <Extras />
       </div>
     </main>
   );

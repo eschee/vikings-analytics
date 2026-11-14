@@ -28,16 +28,16 @@ export default function YourGameCard({
 
   return (
     <section className="rounded-2xl border border-line bg-card p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold tracking-[0.1em] text-muted uppercase">
-            Your game · {game.kickoff}
-          </p>
-          <h2 className="font-display mt-1 text-2xl font-bold text-brand">
-            {matchup}
-          </h2>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1 pt-1">
+      {/* The label gets its own line so it never wraps beside the meter;
+          the matchup and the meter share the row below it. */}
+      <p className="text-xs font-semibold tracking-[0.1em] text-muted uppercase">
+        Your game · {game.kickoff}
+      </p>
+      <div className="mt-1 flex items-center justify-between gap-4">
+        <h2 className="font-display min-w-0 text-2xl font-bold text-brand">
+          {matchup}
+        </h2>
+        <div className="flex shrink-0 flex-col items-end gap-1">
           {goalView ? (
             <>
               <TierMeter tier={goalView.tier} />
@@ -47,7 +47,7 @@ export default function YourGameCard({
             </>
           ) : (
             <>
-              <RootMeter score={game.overall.score} />
+              <RootMeter score={game.overall.score} compact />
               <span className="text-xs text-muted">Root score</span>
             </>
           )}

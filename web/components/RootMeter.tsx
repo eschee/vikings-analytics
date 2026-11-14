@@ -18,7 +18,16 @@ function meterColour(fraction: number): string {
   return `hsl(${hue} 70% 42%)`;
 }
 
-export default function RootMeter({ score }: { score: number }) {
+/** `compact` keeps the short bar at every size. The team's own game uses it:
+ *  its bar is always full, so length tells nothing there, and the space is
+ *  better spent keeping the matchup title on one line. */
+export default function RootMeter({
+  score,
+  compact = false,
+}: {
+  score: number;
+  compact?: boolean;
+}) {
   const fraction = Math.min(score / METER_FULL_AT, 1);
   // A real but tiny score still shows a sliver, so it never looks empty.
   const width = score > 0 ? Math.max(fraction * 100, 6) : 0;
@@ -27,14 +36,16 @@ export default function RootMeter({ score }: { score: number }) {
     <span className="flex items-center gap-2">
       <span
         aria-hidden="true"
-        className="block h-2.5 w-20 overflow-hidden rounded-full bg-dot-off"
+        className={`block h-2.5 w-20 overflow-hidden rounded-full bg-dot-off ${compact ? "" : "lg:w-36"}`}
       >
         <span
           className="block h-full rounded-full"
           style={{ width: `${width}%`, background: meterColour(fraction) }}
         />
       </span>
-      <span className="font-display w-8 text-right text-lg font-bold text-brand tabular-nums">
+      {/* A minimum, not a fixed width: a score like "18.9" is four characters
+          and must push the bar left rather than spill out of the card. */}
+      <span className="font-display min-w-10 text-right text-lg font-bold text-brand tabular-nums">
         {score.toFixed(1)}
       </span>
     </span>
