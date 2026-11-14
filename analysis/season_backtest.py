@@ -6,7 +6,7 @@ make it about 70% of the time, across many teams and seasons.
 
 THE TEST
 
-For each finished season (2022-2025) and each cutoff week (6, 10, 14), the
+For each finished season (2023-2025) and each cutoff week (6, 10, 14), the
 season is rewound to the Monday before that week (simulate's `as_of_week`):
 
   * results before the cutoff count; later results are hidden
@@ -42,9 +42,14 @@ CAVEATS
   * nflverse stores CLOSING lines. A real refresh sees the next week's line
     days before kickoff, slightly less informed. That makes the backtest a
     little flattering for the two lined weeks; it does not affect weeks 3+.
-  * 4 seasons x 3 cutoffs x 32 teams = 384 forecasts per goal, and teams in
+  * 3 seasons x 3 cutoffs x 32 teams = 288 forecasts per goal, and teams in
     one season are not independent. Differences of a few thousandths in Brier
     are noise; the bootstrap interval says which are not.
+  * 2022 is left out. Buffalo-Cincinnati was cancelled after Damar Hamlin's
+    cardiac arrest, so those two teams played 16 games, and the simulator
+    seeds by total wins -- valid only when every team plays 17, which it
+    asserts. Seeding by win percentage would lift that; not worth it for one
+    season.
   * No market futures are included: we have no historical futures prices.
 
 Usage:
@@ -69,7 +74,7 @@ from simulate import simulate
 from standings import build_context, load_games, load_teams, seed_conference
 from win_probability import connect
 
-SEASONS = [2022, 2023, 2024, 2025]
+SEASONS = [2023, 2024, 2025]   # 2022: see CAVEATS
 CUTOFFS = [6, 10, 14]
 GOALS = ("playoffs", "division", "top_seed")
 
