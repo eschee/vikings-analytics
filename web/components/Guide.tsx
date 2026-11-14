@@ -23,10 +23,11 @@ import {
  *  scannable; opening a second row closes the first.
  *
  *  LAYOUT. On a phone everything stacks: your game, the list, then the share
- *  button and footer. From the `lg` breakpoint (1024px, any Mac) it becomes
- *  two columns centred at 1180px: a 420px left column holding your game, the
- *  share button and footer, which stays put (sticky) while the list on the
- *  right scrolls past it.
+ *  button and footer, in a column of at most 600px. From the `lg` breakpoint
+ *  (900px here -- see globals.css) it becomes two columns centred at up to
+ *  1180px, split 2:3 so they share whatever width the window has. The left
+ *  holds your game, the share button and footer, and stays put (sticky)
+ *  while the list on the right scrolls past it.
  *
  *  The share button and footer therefore appear in two places in the markup
  *  -- in the left column (shown on lg only) and at the bottom (hidden on lg).
@@ -91,7 +92,7 @@ export default function Guide({ data }: { data: PageData }) {
   }, [data.games, ranking]);
 
   return (
-    <main className="space-y-6 px-5 py-6 lg:mx-auto lg:grid lg:max-w-[1180px] lg:grid-cols-[420px_minmax(0,1fr)] lg:items-start lg:gap-10 lg:space-y-0 lg:px-8 lg:py-8">
+    <main className="mx-auto max-w-[600px] space-y-6 px-5 py-6 lg:grid lg:max-w-[1180px] lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start lg:gap-8 lg:space-y-0 lg:px-8 lg:py-8">
       <aside className="space-y-6 lg:sticky lg:top-8">
         {data.ownGame ? (
           <YourGameCard

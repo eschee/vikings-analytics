@@ -9,10 +9,11 @@ export default function Header({ data }: { data: PageData }) {
   const headlinePct = `${Math.round(data.playoffPct)}%`;
 
   return (
-    // The purple band spans the window; the inner div centres the content at
-    // the same 1180px as the Guide below, so their left edges line up.
-    <header className="bg-brand px-5 pt-5 pb-7 text-white lg:px-8 lg:pt-6 lg:pb-9">
-      <div className="lg:mx-auto lg:max-w-[1180px]">
+    // The purple band always spans the window. The inner div limits the
+    // content with exactly the same widths and padding as <main> in
+    // Guide.tsx, so the header text lines up with the cards below.
+    <header className="bg-brand pt-5 pb-7 text-white lg:pt-6 lg:pb-9">
+      <div className="mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
       <div className="flex items-center justify-between gap-3">
         <span className="font-display text-xl font-bold tracking-[0.14em]">
           HATEWATCH

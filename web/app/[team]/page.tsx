@@ -40,7 +40,7 @@ export async function generateStaticParams() {
 
 function Notice({ title, message }: { title: string; message: string }) {
   return (
-    <main className="px-5 py-10">
+    <main className="mx-auto max-w-[600px] px-5 py-10">
       <h1 className="font-display text-2xl font-bold text-brand">{title}</h1>
       <p className="mt-3 text-sm text-muted">{message}</p>
     </main>

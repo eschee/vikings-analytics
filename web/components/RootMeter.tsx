@@ -36,7 +36,7 @@ export default function RootMeter({
     <span className="flex items-center gap-2">
       <span
         aria-hidden="true"
-        className={`block h-2.5 w-20 overflow-hidden rounded-full bg-dot-off ${compact ? "" : "lg:w-36"}`}
+        className={`block h-2.5 w-20 overflow-hidden rounded-full bg-dot-off ${compact ? "" : "lg:w-28 xl:w-36"}`}
       >
         <span
           className="block h-full rounded-full"
