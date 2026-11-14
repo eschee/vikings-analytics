@@ -1,8 +1,39 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import Guide from "@/components/Guide";
 import Header from "@/components/Header";
-import { loadPageData, teamAllowlist } from "@/lib/data";
+import { directory, loadPageData, teamAllowlist } from "@/lib/data";
+
+/** Look a URL segment up in the 32-team directory. Returns null for anything
+ *  that is not a current team, so an unknown segment never reaches a query --
+ *  the directory is one fixed query with no input. */
+async function lookup(segment: string) {
+  const dir = await directory();
+  const abbr = segment.toUpperCase();
+  return dir.entries.find((t) => t.abbr === abbr) ?? null;
+}
+
+/** Each team's page gets its own browser-tab title and link-preview text. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ team: string }>;
+}): Promise<Metadata> {
+  const { team } = await params;
+  const found = await lookup(team).catch(() => null);
+  if (!found) return {};
+  const nick = found.nick;
+  return {
+    title: `${nick} — Hatewatch`,
+    description: `Which other NFL results help the ${nick} most, ranked by how much they move their playoff, division and #1 seed odds.`,
+  };
+}
+
+/* No per-team generateViewport (the phone toolbar colour): reading the URL
+   there stops Next.js prerendering the page -- it reports this as
+   "blocking-prerender-viewport-runtime". The toolbar keeps the house purple
+   from layout.tsx; the banner itself still takes the team's colours. */
 
 /** One page per team.
  *

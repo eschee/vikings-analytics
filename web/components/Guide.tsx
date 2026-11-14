@@ -116,6 +116,20 @@ export default function Guide({ data }: { data: PageData }) {
             <GoalSelector value={ranking} onChange={setRanking} />
           </div>
 
+          {/* A team that is all but out gets a plain explanation instead of a
+              page of zeros that looks like a bug. Under 1% means fewer than
+              1,000 of the 100,000 simulated seasons reach the playoffs. */}
+          {data.playoffPct < 1 ? (
+            <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm leading-relaxed text-muted">
+              <span className="font-semibold text-brand">
+                The {data.teamNick} are all but out of the playoff race
+              </span>{" "}
+              — they reach the playoffs in under 1% of simulated seasons, so
+              no result this week moves their odds much. Any games that still
+              matter a little are listed below.
+            </p>
+          ) : null}
+
           {listed.length > 0 ? (
             <ul className="space-y-3">
               {listed.map((game) => (
@@ -131,7 +145,9 @@ export default function Guide({ data }: { data: PageData }) {
                 />
               ))}
             </ul>
-          ) : (
+          ) : data.playoffPct < 1 ? null : (
+            // An eliminated team already has the note above; saying "nothing
+            // matters" twice reads like an error.
             <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm text-muted">
               No other game this week moves your odds beyond simulation noise.
             </p>

@@ -1,68 +1,79 @@
+import type { CSSProperties } from "react";
+
+import TeamPicker from "./TeamPicker";
 import type { PageData } from "@/lib/types";
 
-/** The purple header: wordmark, team picker, record and week, and the
- *  headline. The headline always states the playoff number even when the list
- *  is ranked by something else, because it is the one figure a fan opens the
- *  page for. */
+/** The banner: wordmark, team picker, record and week, and the headline.
+ *
+ *  COLOURS. The banner takes the team's colours. They arrive as a finished,
+ *  contrast-checked theme (lib/colors.ts) and are set here as CSS variables
+ *  on the <header>; every element inside reads them through Tailwind's
+ *  `bg-(--team-bg)` style classes. One place sets the colours, everything else
+ *  just refers to them -- including the picker button.
+ *
+ *  The headline always states the playoff number even when the list is ranked
+ *  by something else, because it is the one figure a fan opens the page for.
+ */
 
 export default function Header({ data }: { data: PageData }) {
   const headlinePct = `${Math.round(data.playoffPct)}%`;
+  const t = data.theme;
+  const vars = {
+    "--team-bg": t.bg,
+    "--team-fg": t.fg,
+    "--team-accent": t.accent,
+    "--team-muted": t.muted,
+    "--team-line": t.line,
+    "--team-soft": t.soft,
+  } as CSSProperties;
 
   return (
-    // The purple band always spans the window. The inner div limits the
-    // content with exactly the same widths and padding as <main> in
-    // Guide.tsx, so the header text lines up with the cards below.
-    <header className="bg-brand pt-5 pb-7 text-white lg:pt-6 lg:pb-9">
-      <div className="mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-display text-xl font-bold tracking-[0.14em]">
-          HATEWATCH
-        </span>
-
-        {/* Only one team exists so far. The control is still a real button so
-            it is reachable by keyboard, and announces that it is inactive
-            rather than silently doing nothing. */}
-        <button
-          type="button"
-          aria-disabled="true"
-          className="flex items-center gap-2 rounded-full border border-brand-line bg-brand-soft px-4 py-2 text-sm font-semibold text-white"
-        >
-          {data.teamNick}
-          <span aria-hidden="true" className="text-lavender">
-            ⌄
+    // The band always spans the window. The inner div limits the content with
+    // exactly the same widths and padding as <main> in Guide.tsx, so the
+    // header text lines up with the cards below. It is also `relative`, so
+    // the picker's panel can be positioned under the button.
+    <header
+      style={vars}
+      className="bg-(--team-bg) pt-5 pb-7 text-(--team-fg) lg:pt-6 lg:pb-9"
+    >
+      <div className="relative mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-display text-xl font-bold tracking-[0.14em]">
+            HATEWATCH
           </span>
-          <span className="sr-only">
-            — only the {data.teamNick} are available right now
+          <TeamPicker
+            current={data.teamAbbr}
+            currentNick={data.teamNick}
+            teams={data.directory}
+          />
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <p className="text-sm text-(--team-muted)">
+            {data.teamNick} {data.recordText} · Week {data.week}
+          </p>
+          <span className="rounded-full border border-(--team-line) px-3 py-1 text-xs font-medium text-(--team-muted)">
+            Updated {data.updatedLabel}
           </span>
-        </button>
-      </div>
-
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <p className="text-sm text-lavender">
-          {data.teamNick} {data.recordText} · Week {data.week}
-        </p>
-        <span className="rounded-full border border-brand-line px-3 py-1 text-xs font-medium text-lavender">
-          Updated {data.updatedLabel}
-        </span>
-      </div>
-
-      <h1 className="font-display mt-3 text-[34px] leading-[1.12] font-bold">
-        <span className="text-gold">{headlinePct}</span> chance to make the
-        playoffs
-      </h1>
-
-      {/* The other two goals, so every "now" number in the detail tables
-          has a visible starting point. */}
-      <dl className="mt-3 flex gap-5 text-sm">
-        <div className="flex items-baseline gap-1.5">
-          <dt className="text-lavender">Division</dt>
-          <dd className="font-semibold">{Math.round(data.divisionPct)}%</dd>
         </div>
-        <div className="flex items-baseline gap-1.5">
-          <dt className="text-lavender">#1 seed</dt>
-          <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
-        </div>
-      </dl>
+
+        <h1 className="font-display mt-3 text-[34px] leading-[1.12] font-bold">
+          <span className="text-(--team-accent)">{headlinePct}</span> chance to
+          make the playoffs
+        </h1>
+
+        {/* The other two goals, so every "now" number in the detail tables
+            has a visible starting point. */}
+        <dl className="mt-3 flex gap-5 text-sm">
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-(--team-muted)">Division</dt>
+            <dd className="font-semibold">{Math.round(data.divisionPct)}%</dd>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-(--team-muted)">#1 seed</dt>
+            <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
+          </div>
+        </dl>
       </div>
     </header>
   );

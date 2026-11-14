@@ -67,6 +67,29 @@ export async function allowedTeams(): Promise<string[]> {
   return rows.map((r) => r.team_abbr);
 }
 
+export interface DirectoryRow {
+  team_abbr: string;
+  team_name: string;
+  team_nick: string;
+  team_conf: string;
+  team_division: string;
+  team_color: string | null;
+  team_color2: string | null;
+}
+
+/** All 32 current teams with their conference, division and colours: the
+ *  team picker's contents and every page's banner colours. Takes no input,
+ *  so no part of the URL ever reaches this query. */
+export async function teamDirectory(): Promise<DirectoryRow[]> {
+  const sql = client();
+  return (await sql`
+    SELECT team_abbr, team_name, team_nick, team_conf, team_division,
+           team_color, team_color2
+    FROM teams WHERE is_current
+    ORDER BY team_conf, team_division, team_nick
+  `) as DirectoryRow[];
+}
+
 export async function nicknames(): Promise<Record<string, string>> {
   const sql = client();
   const rows = (await sql`

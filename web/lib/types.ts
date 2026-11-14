@@ -3,6 +3,8 @@
  *  payload: the server narrows it once, and the client only sees what it
  *  needs. */
 
+import type { TeamTheme } from "./colors";
+
 export type GoalKey = "playoffs" | "division" | "top_seed" | "draft";
 
 /** The three goals the site ranks by. The draft goal is computed and stored,
@@ -153,7 +155,22 @@ export interface GameView {
   overall: OverallView;
 }
 
+/** One team in the picker. `colour` is already validated as #RRGGBB, or
+ *  null, so it is safe to put in a style attribute. */
+export interface TeamEntry {
+  abbr: string;
+  nick: string;
+  conference: string;
+  /** "East", "North"... -- the conference prefix is dropped for display. */
+  division: string;
+  colour: string | null;
+}
+
 export interface PageData {
+  /** The banner colours for this team. */
+  theme: TeamTheme;
+  /** All 32 teams, ordered by conference, division, nickname. */
+  directory: TeamEntry[];
   teamNick: string;
   teamName: string;
   teamAbbr: string;
