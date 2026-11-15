@@ -34,7 +34,8 @@ DEFAULT_SIMS = 200_000
 # replays). Each replay costs a re-seeding, so this is far fewer than
 # DEFAULT_SIMS -- but a paired difference is so much less noisy than comparing
 # different seasons that 40,000 still measures this week's games more
-# precisely than all 200,000 can by conditioning. About 3 extra minutes.
+# precisely than all 200,000 can by conditioning. About 4 extra minutes
+# (measured: 345 s for simulate + replays vs 108 s without, Nov 2026).
 PAIRED_SIMS = 40_000
 DEFAULT_SEED = 20260101
 
