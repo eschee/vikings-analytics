@@ -8,6 +8,7 @@ import GoalSelector from "./GoalSelector";
 import RootForRow from "./RootForRow";
 import ShareButton from "./ShareButton";
 import YourGameCard from "./YourGameCard";
+import { shareSummary, type ShareSummary } from "@/lib/share";
 import {
   RANKABLE_GOALS,
   type GameView,
@@ -36,10 +37,10 @@ import {
  *  reordering one copy with CSS grid, would make the visual order differ from
  *  the reading order on one of the two layouts. */
 
-function Extras() {
+function Extras({ share }: { share: ShareSummary }) {
   return (
     <>
-      <ShareButton />
+      <ShareButton title={share.title} text={share.text} />
       {/* The timestamp lives in the header, so the footer does not repeat
           it. */}
       <footer className="pb-4 text-center">
@@ -70,6 +71,9 @@ export default function Guide({ data }: { data: PageData }) {
   const [ranking, setRanking] = useState<Ranking>(data.defaultGoal);
   const [openId, setOpenId] = useState<string | null>(null);
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
+  // The share message always uses the Overall ranking, whatever the reader
+  // has chosen to rank by, so a shared link means the same thing to everyone.
+  const share = useMemo(() => shareSummary(data), [data]);
 
   // Three buckets, not two. A game only reaches "doesn't matter" when it is
   // below the noise floor for EVERY goal. One that is quiet for the selected
@@ -103,7 +107,7 @@ export default function Guide({ data }: { data: PageData }) {
           />
         ) : null}
         <div className="hidden space-y-6 lg:block">
-          <Extras />
+          <Extras share={share} />
         </div>
       </aside>
 
@@ -170,7 +174,7 @@ export default function Guide({ data }: { data: PageData }) {
       </div>
 
       <div className="space-y-6 lg:hidden">
-        <Extras />
+        <Extras share={share} />
       </div>
     </main>
   );
