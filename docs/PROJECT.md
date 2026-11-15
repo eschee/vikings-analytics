@@ -15,9 +15,9 @@ Hatewatch answers that. For each remaining game it says which result helps
 your team, ranked by how much it moves three things: **making the playoffs**,
 **winning the division**, and **the #1 seed**.
 
-- **Vikings first, any team later.** Every number is already computed and
-  stored for all 32 teams; the site serves `/[team]` for each. Only the team
-  picker in the header is still inert.
+- **Every team.** Every number is computed and stored for all 32 teams; the
+  site serves `/[team]` for each, and the header's team picker switches
+  between them. `/` still redirects to the Vikings.
 - **Simple first, detail on tap.** The collapsed row shows who to root for and
   a three-dot meter — no numbers. Tapping opens the reason in plain English,
   the per-goal impacts, and the chance the team you want actually wins.
@@ -127,7 +127,7 @@ PY
 
 ## What is built
 
-All eight PRs are merged. Each was security-reviewed before merge.
+PRs #1–#11 are merged. Each was security-reviewed before merge.
 
 | PR | what it added |
 |---|---|
@@ -139,6 +139,10 @@ All eight PRs are merged. Each was security-reviewed before merge.
 | **#6** | The Next.js site. Then 100k sims, the forced-outcome verification, and "Matters for other goals". |
 | **#7** | Deployment: Neon, the two roles, retention, `--skip-schema`, the scheduled workflow, the site reading Neon, `/[team]` with the allowlist. |
 | **#8** | Early guard for a missing secret, actions upgraded to v7, `.env` permissions fixed. |
+| **#9** | This file, and the rule that every session reads it first. |
+| **#10** | The Overall Root score (playoffs/division/#1 seed weighted 50/30/20) with a green-to-red meter as the default ranking; a per-goal "now / if A wins / if B wins" table on tap; two-column layout from 900px. |
+| **#11** | All 32 teams: the header team picker (AFC/NFC by division) and banners in each team's colours, with text colour chosen per team for contrast; per-team page titles; a note for eliminated teams. |
+| **#12** | The season-odds backtest and the v5 model it chose (see Key results). |
 
 ### Key results
 
@@ -187,6 +191,30 @@ the games used to measure the noise floor really do have no effect.
 
 Clearly better than a coin flip, short of the closing line — which is the
 correct outcome. 2025 was an unpredictable year for the market too.
+
+**Season-odds backtest** (`analysis/season_backtest.py`, Nov 2026). The
+headline numbers — playoff, division, #1 seed odds — replayed for 2023–2025
+from weeks 6, 10 and 14, using only what was known then: results before the
+cutoff, betting lines for that week and the next, ratings fitted from those
+lines alone. 288 forecasts per goal, scored against what happened. 2022 is
+excluded: the cancelled BUF–CIN game left two teams at 16 games.
+
+| model | playoffs Brier | division calibration gap |
+|---|---|---|
+| v4: 6-week half-life, full spreads | 0.1343 | 7.6 pts |
+| two weeks of lines, coin flips after | 0.1285 | 5.1 pts |
+| **v5 (live): 2-week half-life, 75% spreads, 1.5× jitter** | **0.1288** | **4.4 pts** |
+
+v4 was overconfident, mainly on divisions: teams it gave ~87% won the
+division 71% of the time. v5 beats v4 on playoff Brier in each season
+separately. It only *ties* the coin-flip version on Brier — ratings for
+far-off games add little beyond the betting lines — so its value is honest
+calibration, not sharper picks.
+
+**Against live markets (week 10, 2026):** most teams within ~5 points of
+Kalshi, perthirtysix and The Athletic; a few 10–16 points apart (TB, DAL,
+DET under v4). Markets remain the better forecaster of season odds; see
+"Market data" under Known limitations.
 
 ---
 
@@ -249,6 +277,20 @@ games. Measured on CHI @ DET (week 12): conditioning 0.709 vs forced 0.252, a
 per game — 272 runs — which is why conditioning exists. Market-priced games
 (the current week or two) are unaffected and provably equivalent.
 
+**Injuries reach the model only through betting lines.** Weeks with a line
+(the next one or two) pick up news once the line moves and a refresh runs
+(Mon/Tue/Fri). Later weeks see it only as fast as the ratings follow recent
+lines — faster under v5's 2-week half-life, still not instantly.
+
+**Market data: none we may use yet.** Kalshi covers playoffs, division and
+#1 seed for all 32 teams, but its Developer Agreement v1.1 (§3, §3.1, §3.5,
+§6.4) forbids storing, sharing, benchmarking against or publicly naming its
+data without written permission. A permission request was emailed to
+institutional@kalshi.com on 2026-11-14; until a written yes arrives, make no
+Kalshi API calls. Polymarket's terms are ambiguous and its #1 seed markets
+are near-empty. The Odds API allows display but has no playoff or division
+futures. No 2022–2024 futures history exists in any usable source.
+
 **No draft goal on the site.** It is computed and stored, and deliberately
 hidden: it tells a fan to root against their own team. Available in the
 terminal via `python analysis/guide.py --goal draft`.
@@ -276,10 +318,11 @@ contracts live in the local database.
 
 **Actions use mutable major tags** (`@v7`) rather than SHA pins.
 
-**Monday is the first *scheduled* run.** Manual dispatch is verified end to
-end; a `schedule` trigger has never fired. **Retention has never pruned on
-Neon** either — there are exactly three runs and the threshold is three, so
-Monday's run is the first to drop a grid. Worth checking afterward.
+**Scheduled runs start late.** The first `schedule` run (Fri 2026-11-13)
+succeeded — including the first retention prune on Neon (17,280 rows) and the
+Vercel rebuild — but GitHub started it at 20:48 UTC, nearly seven hours after
+its 14:00 slot. GitHub does not guarantee start times; if timing matters,
+schedule earlier or dispatch manually.
 
 ---
 
@@ -289,8 +332,8 @@ Monday's run is the first to drop a grid. Worth checking afterward.
    explain tiers, the noise floor, and where the numbers come from.
 2. **Share image** — the share button is a placeholder that admits it isn't
    wired up. Wants an OG image per team per week.
-3. **32-team picker** — `/[team]` already serves all 32; the header button is
-   inert. Needs a menu and a way to remember a choice.
+3. **Remember the chosen team** — the picker works (PR #11) but does not
+   remember a choice, and `/` always goes to the Vikings.
 4. **Market-odds comparison** — show the model against the market where a line
    exists, as a calibration display and a credibility signal.
 5. **AI features, later** — natural-language summaries of a week, or asking

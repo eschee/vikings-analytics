@@ -20,12 +20,24 @@ results with the same tiebreaker code validated against the real brackets.
 
 VARIANTS (same seed, so differences are the model, not luck)
 
-  lines+coin  lines for two weeks, coin flips after: the pre-ratings model,
-              a floor any real model must beat
-  hl2 / hl4   ratings weighted toward recent lines (half-life 2 or 4 weeks)
-  hl6         PRODUCTION: half-life 6 weeks, with rating jitter
-  hl6-nojit   production without the per-team rating uncertainty
-  hl10        ratings that move more slowly than production
+  lines+coin   lines for two weeks, coin flips after: the pre-ratings model,
+               a floor any real model must beat
+  hl6          the v4 model: half-life 6 weeks, full spreads, derived jitter
+  hl2 / hl4 /  the v4 model with a different half-life
+  hl10
+  hl2-s75...   round-2 overconfidence fixes (see VARIANTS for the key)
+  production   simulate()'s defaults -- whatever is live. Currently the same
+               settings as hl2-s75-j15, chosen by this backtest in Nov 2026.
+
+RESULTS (Nov 2026, 10,000 sims, 288 forecasts per goal)
+
+  variant       playoffs Brier   division calibration gap
+  hl6 (v4)          0.1343              7.6 pts
+  lines+coin        0.1285              5.1 pts
+  hl2-s75-j15       0.1288              4.4 pts   <- adopted as v5
+  The adopted settings beat v4 on playoff Brier in each of 2023, 2024 and
+  2025 separately. They only tie lines+coin on Brier, i.e. ratings for far-off
+  games add little beyond the betting lines; their value is calibration.
 
 METRICS
 
@@ -70,7 +82,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from simulate import simulate
+from simulate import JITTER_SD, simulate
 from standings import build_context, load_games, load_teams, seed_conference
 from win_probability import connect
 
@@ -78,15 +90,36 @@ SEASONS = [2023, 2024, 2025]   # 2022: see CAVEATS
 CUTOFFS = [6, 10, 14]
 GOALS = ("playoffs", "division", "top_seed")
 
-# name -> keyword arguments for simulate()
+def _v(half_life: float, scale: float = 1.0, jitter: float = 1.0) -> dict:
+    """Every setting spelled out, so a variant means the same thing even
+    after production's defaults change."""
+    return {"half_life": half_life, "rating_scale": scale,
+            "jitter_sd": jitter * JITTER_SD}
+
+
+# name -> keyword arguments for simulate(). Run a subset with --variants.
+#   hlN    ratings half-life N weeks
+#   sNN    ratings-priced spreads scaled to NN% (pulls far-off games toward
+#          a coin flip)
+#   jNN    rating jitter at NN/10 x the derived JITTER_SD (more "we might be
+#          wrong about this team")
+#   nojit  no rating jitter at all
 VARIANTS: dict[str, dict] = {
     "lines+coin": {"use_ratings": False},
-    "hl2": {"half_life": 2.0},
-    "hl4": {"half_life": 4.0},
-    "hl6": {},                                   # production
-    "hl6-nojit": {"jitter_sd": 0.0},
-    "hl10": {"half_life": 10.0},
+    "hl2": _v(2.0),
+    "hl4": _v(4.0),
+    "hl6": _v(6.0),                              # the v4 model
+    "hl6-nojit": _v(6.0, jitter=0.0),
+    "hl10": _v(10.0),
+    # Round 2: overconfidence fixes, on top of the faster half-life.
+    "hl2-s75": _v(2.0, scale=0.75),
+    "hl2-s50": _v(2.0, scale=0.50),
+    "hl2-j15": _v(2.0, jitter=1.5),
+    "hl2-j20": _v(2.0, jitter=2.0),
+    "hl2-s75-j15": _v(2.0, scale=0.75, jitter=1.5),
+    "production": {},                            # simulate()'s defaults
 }
+# The baseline the "difference vs" table compares against.
 PRODUCTION = "hl6"
 
 # Log loss of a probability of exactly 0 or 1 is infinite; clip like any
@@ -247,10 +280,22 @@ def main() -> int:
           f"{args.sims:,} sims, {n_cases * 32} forecasts per goal ===")
 
     print("\nBrier score (lower is better)  [log loss for playoffs]")
-    print(f"  {'variant':<11}" + "".join(f"{g:>11}" for g in GOALS) + f"{'logloss':>10}")
+    print(f"  {'variant':<12}" + "".join(f"{g:>11}" for g in GOALS) + f"{'logloss':>10}")
     for name in args.variants:
         row = "".join(f"{brier(sel(name, g)):>11.4f}" for g in GOALS)
-        print(f"  {name:<11}{row}{log_loss(sel(name, 'playoffs')):>10.4f}")
+        print(f"  {name:<12}{row}{log_loss(sel(name, 'playoffs')):>10.4f}")
+
+    # A fix chosen on three seasons can just be fitting their luck. One that
+    # wins in EVERY season separately is far more likely to hold up.
+    for goal in ("playoffs", "division"):
+        print(f"\n{goal.capitalize()} Brier by season (a real fix wins in each)")
+        print(f"  {'variant':<12}" + "".join(f"{s:>9}" for s in args.seasons))
+        for name in args.variants:
+            cells = "".join(
+                f"{brier([f for f in sel(name, goal) if f.season == s]):>9.4f}"
+                for s in args.seasons
+            )
+            print(f"  {name:<12}{cells}")
 
     if PRODUCTION in args.variants:
         print(f"\nDifference vs production ({PRODUCTION}), playoffs Brier, "

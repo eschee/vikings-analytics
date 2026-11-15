@@ -15,7 +15,7 @@ from __future__ import annotations
 # numbers: the win-probability method, the ratings fit, the jitter, the
 # tiebreakers, or the simulation itself.
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v4-ratings-jitter-realtb"
+MODEL_VERSION = "v5-recent-ratings-calibrated"   # season_backtest.py, Nov 2026
 
 DEFAULT_SEASON = 2026
 # 100,000 rather than 20,000. At 20k the noise floor for a team sat near
