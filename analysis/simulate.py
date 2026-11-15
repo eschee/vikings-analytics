@@ -112,6 +112,31 @@ TIEBREAK_NOISE = 1e-6
 # Correlated per-team rating error. See the module docstring for the derivation.
 JITTER_SD = RATINGS_SPREAD_RMSE / math.sqrt(2.0)
 
+# SEASON MODEL SETTINGS -- chosen by season_backtest.py, not by taste.
+#
+# Replaying 2023-2025 from weeks 6, 10 and 14 showed the previous settings
+# (6-week half-life, full predicted spreads, jitter as derived above) were
+# overconfident: teams given ~87% to win their division did it 71% of the
+# time, and calling every unpriced game a coin flip scored about as well.
+# The three changes below beat those settings on playoff Brier score in every
+# season tested, and cut the average division calibration gap from 7.6 to 4.4
+# points:
+#
+#   * a 2-week half-life: ratings follow the most recent lines, so they move
+#     as fast as the market's view of a team does. (ratings.py keeps 6 weeks
+#     for single-game prediction, where its own backtest chose it.)
+#   * spreads for unpriced games scaled to 75%: a game a month away is less
+#     predictable than its rating-implied spread suggests.
+#   * 1.5x the derived jitter: more "we may be wrong about this team" -- the
+#     derivation above captures rating error, not the injuries and form swings
+#     that also accumulate over the rest of a season.
+#
+# Change any of these only with a new backtest, and bump MODEL_VERSION in
+# hatewatch/config.py when you do.
+SEASON_HALF_LIFE_WEEKS = 2.0
+SEASON_RATING_SCALE = 0.75
+SEASON_JITTER_SD = 1.5 * JITTER_SD
+
 # The four goals a fan might root for. Each maps to a column on SimResult and a
 # direction: True means higher is better.
 GOALS = {
@@ -202,6 +227,9 @@ def simulate(
     jitter_sd: float | None = None,
     real_tiebreakers: bool = True,
     force: dict[str, str] | None = None,
+    as_of_week: int | None = None,
+    half_life: float | None = None,
+    rating_scale: float | None = None,
 ) -> SimResult:
     """Simulate the rest of a season.
 
@@ -210,21 +238,49 @@ def simulate(
     it overrides the result without touching the rating draw that produced it,
     which is what makes it a clean check on the conditioning method used for
     impacts.
+
+    `as_of_week` replays a finished season as it stood before that week, for
+    backtesting (see season_backtest.py). The model then sees only results
+    before that week and betting lines for that week and the next -- the two
+    weeks of lines production has on a typical refresh -- and fits its ratings
+    from those lines alone. None (the default) is production: the database's
+    real played/unplayed state and every line it holds.
+
+    `half_life`, `rating_scale` and `jitter_sd` override the season model
+    settings (SEASON_* above) -- for backtesting alternatives. `rating_scale`
+    multiplies the predicted spread of every ratings-priced game (weeks with
+    no betting line yet); below 1 it pulls those games toward a coin flip.
+    Left as None, each takes its production value.
     """
     teams = load_teams(conn)
     if target not in teams:
         raise SystemExit(f"unknown team {target!r}")
 
+    lines_through = None if as_of_week is None else as_of_week + 1
+
     fit = None
     if use_ratings:
         from ratings import fit_for_season
 
-        fit = fit_for_season(conn, season)
+        fit = fit_for_season(
+            conn,
+            season,
+            through_week=lines_through,
+            half_life=SEASON_HALF_LIFE_WEEKS if half_life is None else half_life,
+        )
     if jitter_sd is None:
-        jitter_sd = JITTER_SD if use_ratings else 0.0
+        jitter_sd = SEASON_JITTER_SD if use_ratings else 0.0
+    if rating_scale is None:
+        rating_scale = SEASON_RATING_SCALE
 
-    all_games = load_games(conn, season)
-    remaining = remaining_game_probs(conn, season, fit=fit)
+    all_games = load_games(conn, season, as_of_week=as_of_week)
+    remaining = remaining_game_probs(
+        conn,
+        season,
+        fit=fit,
+        as_of_week=as_of_week,
+        lines_through_week=lines_through,
+    )
 
     # --- starting point: records already earned -----------------------------
     records = compute_records(all_games, teams)
@@ -282,7 +338,7 @@ def simulate(
         h = home_idx[rating_cols]
         a = away_idx[rating_cols]
         margin = (
-            rating_spread[rating_cols]           # predicted spread
+            rating_scale * rating_spread[rating_cols]   # predicted spread
             + jitter[:, h] - jitter[:, a]        # correlated rating error
             + rng.normal(0.0, SPREAD_SIGMA, size=(n_sims, rating_cols.size))
         )
@@ -451,7 +507,7 @@ def main() -> int:
     ap.add_argument("--no-ratings", action="store_true",
                     help="coin-flip unpriced games (the old v1 behaviour)")
     ap.add_argument("--jitter-sd", type=float,
-                    help=f"rating jitter in points (default {JITTER_SD:.2f})")
+                    help=f"rating jitter in points (default {SEASON_JITTER_SD:.2f})")
     ap.add_argument("--simple-tiebreakers", action="store_true",
                     help="win total then random, instead of the NFL ladder")
     args = ap.parse_args()
