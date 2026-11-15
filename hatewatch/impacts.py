@@ -31,6 +31,9 @@ from .config import (
 )
 from .reasons import reason_code
 
+# Importable because hatewatch/__init__.py puts analysis/ on sys.path.
+from simulate import PAIRED_GOAL_ROW  # noqa: E402
+
 # Direction per goal: True when a higher number is the better outcome. The
 # draft is inverted -- pick 1 is the prize, so a LOWER number is better.
 HIGHER_IS_BETTER = {
@@ -247,6 +250,18 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
         away_arm: dict[str, np.ndarray] = {}
         std_err: dict[str, np.ndarray] = {}
         for j, g in enumerate(res.games):
+            paired = (res.paired or {}).get(g.game_id)
+            if paired is not None and goal in PAIRED_GOAL_ROW:
+                # This week's games: measured by replaying the same seasons
+                # both ways (simulate's paired replays) -- far more precise
+                # than comparing different seasons, so small effects get a
+                # trustworthy direction.
+                row = PAIRED_GOAL_ROW[goal]
+                home_arm[g.game_id] = paired.home_mean[row]
+                away_arm[g.game_id] = paired.away_mean[row]
+                signed[g.game_id] = paired.diff_mean[row] * scale
+                std_err[g.game_id] = paired.diff_se[row] * scale
+                continue
             hw = res.home_wins[:, j]
             v_home, v_away, n_home, n_away = _conditional_means(matrix, hw)
             signed[g.game_id] = (v_home - v_away) * scale

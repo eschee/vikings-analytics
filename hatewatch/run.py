@@ -114,7 +114,13 @@ def main() -> int:
         res = simulate(
             conn, season, args.sims, "MIN", args.seed,
             use_ratings=True, real_tiebreakers=True,
+            # The site shows the current week, so its games are also measured
+            # by paired replays (see simulate's docstring).
+            paired_week=week, paired_sims=min(config.PAIRED_SIMS, args.sims),
         )
+        if res.paired:
+            print(f"  paired replays: {len(res.paired)} week-{week} games "
+                  f"x {next(iter(res.paired.values())).n:,} seasons")
         counts = method_counts(res.games)
         print("  pricing: "
               + ", ".join(f"{m} {c}" for m, c in counts.items() if c))

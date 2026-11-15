@@ -100,11 +100,13 @@ export default function HowThisWorks() {
 
         <Section title="What makes a game matter">
           <p>
-            To value one game, we split the 200,000 seasons by who won it and
-            compare the two halves. If your playoff chance is 76% in the
-            seasons where the Cardinals won and 73% where the Rams won, that
-            game is worth about 3 points to you, and you should root for the
-            Cardinals.
+            To value one of this week&apos;s games, we replay 40,000 of those
+            seasons twice — once with each team winning it, everything else
+            identical — and compare. If your playoff chance is 75% when the
+            Cardinals win and 73% when the Rams do, that game is worth about 2
+            points to you, and you should root for the Cardinals. Because the
+            two replays differ only in that one game, even small effects show
+            which way they point.
           </p>
           <p>
             <span className="font-semibold text-brand">The Root score</span>{" "}
@@ -132,8 +134,8 @@ export default function HowThisWorks() {
             <ul className="mt-1 space-y-1">
               <li>
                 Too close to call — involves your conference, so it can nudge
-                your odds, but by less than 200,000 simulated seasons can
-                measure. We won&apos;t guess a side.
+                your odds, but by less than a tenth of a point, or less than
+                we can measure. We won&apos;t guess a side.
               </li>
               <li>
                 Can&apos;t really affect you — both teams are in the other

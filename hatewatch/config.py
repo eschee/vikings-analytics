@@ -15,7 +15,7 @@ from __future__ import annotations
 # numbers: the win-probability method, the ratings fit, the jitter, the
 # tiebreakers, or the simulation itself.
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v5.1-per-game-significance"   # v5 model + per-game tiering, Nov 2026
+MODEL_VERSION = "v5.2-paired-replays"   # v5 model, per-game tiering, paired current-week impacts
 
 DEFAULT_SEASON = 2026
 # 100,000 rather than 20,000. At 20k the noise floor for a team sat near
@@ -29,6 +29,13 @@ DEFAULT_SEASON = 2026
 # effects about 30% smaller measurable, so smaller real games can be shown.
 # Costs about two minutes.
 DEFAULT_SIMS = 200_000
+
+# Seasons replayed both ways for each of this week's games (simulate's paired
+# replays). Each replay costs a re-seeding, so this is far fewer than
+# DEFAULT_SIMS -- but a paired difference is so much less noisy than comparing
+# different seasons that 40,000 still measures this week's games more
+# precisely than all 200,000 can by conditioning. About 3 extra minutes.
+PAIRED_SIMS = 40_000
 DEFAULT_SEED = 20260101
 
 # Retention.
@@ -74,10 +81,12 @@ TIER_LABELS = {
     TIER_DOESNT_MATTER: "Doesn't matter",
 }
 
-# A floor below which we never claim a game matters, even if a run's measured
-# noise floor comes out smaller than this. Guards against a lucky run reporting
-# a tiny control-group maximum and then promoting pure noise to "a little".
-MIN_NOISE_FLOOR = 0.25
+# A floor below which we never claim a game matters, however precisely it is
+# measured: a tenth of a percentage point. It was 0.25 while every game was
+# measured by conditioning (errors ~0.2); paired replays measure this week's
+# games to ~0.05, so real effects of 0.1-0.25 points -- which fans asked to see
+# as tiebreakers -- would otherwise be hidden by the floor alone.
+MIN_NOISE_FLOOR = 0.1
 
 # How many of its own standard errors a game's swing must reach to count as
 # real (see impacts.significance_floor). 2.5 means a game with no true effect

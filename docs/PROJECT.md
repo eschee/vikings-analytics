@@ -127,7 +127,7 @@ PY
 
 ## What is built
 
-PRs #1–#15 are merged. Each was security-reviewed before merge.
+PRs #1–#16 are merged. Each was security-reviewed before merge.
 
 | PR | what it added |
 |---|---|
@@ -147,6 +147,7 @@ PRs #1–#15 are merged. Each was security-reviewed before merge.
 | **#14** | The full "How this works" page with the measured accuracy, and a "model estimate" note under the headline. |
 | **#15** | A pick-your-team start screen at `/`, and a share button that copies on laptops (Chrome on macOS left `navigator.share` hanging). |
 | **#16** | Per-game significance tiers, 200k sims, other-conference games never ranked, and "Too close to call" / "Can't really affect you" groups. |
+| **#17** | Paired replays for the current week's games (each replayed both ways in the same 40k seasons), and a 0.1-point minimum. |
 
 ### Key results
 
@@ -252,6 +253,17 @@ are never ranked at all: their only channel is tiny tiebreakers, so any
 measured swing is noise. 200,000 sims (was 100k) shrink the error so smaller
 real effects show; about two minutes per run. The draft goal keeps the old
 control-group floor.
+
+**This week's games are measured by paired replays.** In the first 40,000
+simulated seasons (`PAIRED_SIMS`), each current-week game is flipped and that
+season re-seeded, so the game is seen both ways with everything else
+identical. Errors drop from ~0.2 to ~0.05 points and games that cannot
+matter come out at exactly zero. Tiebreak coin tosses use one random stream
+per (season, conference) so a replay repeats them. Only the two teams'
+conferences are re-seeded. Adds ~4 minutes per run. Week-10 check for MIN:
+conditioning said LA @ ARI moved the division 0.82 points; paired showed
+−0.01 — the conditioning figure was noise. Future weeks still use
+conditioning (below), but the site only shows the current week.
 
 **Impacts by conditioning, not re-simulation.** Each game's winner already
 varies across iterations, so one run answers all 135 games at once. Verified
@@ -371,7 +383,7 @@ model or `season_backtest.py` results change.
 
 ```bash
 # refresh + simulate + save (uses DATABASE_URL)
-python -m hatewatch.run                    # 200k sims, ~2 min
+python -m hatewatch.run                    # 200k sims + paired replays, ~6 min
 python -m hatewatch.run --skip-schema      # production: no DDL rights needed
 
 # terminal report
