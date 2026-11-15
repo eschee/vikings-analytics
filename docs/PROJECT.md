@@ -127,7 +127,7 @@ PY
 
 ## What is built
 
-PRs #1–#11 are merged. Each was security-reviewed before merge.
+PRs #1–#13 are merged. Each was security-reviewed before merge.
 
 | PR | what it added |
 |---|---|
@@ -143,6 +143,8 @@ PRs #1–#11 are merged. Each was security-reviewed before merge.
 | **#10** | The Overall Root score (playoffs/division/#1 seed weighted 50/30/20) with a green-to-red meter as the default ranking; a per-goal "now / if A wins / if B wins" table on tap; two-column layout from 900px. |
 | **#11** | All 32 teams: the header team picker (AFC/NFC by division) and banners in each team's colours, with text colour chosen per team for contrast; per-team page titles; a note for eliminated teams. |
 | **#12** | The season-odds backtest and the v5 model it chose (see Key results). |
+| **#13** | A working share button (system share sheet, else copy) and a per-team link-preview card. |
+| **#14** | The full "How this works" page with the measured accuracy, and a "model estimate" note under the headline. |
 
 ### Key results
 
@@ -328,14 +330,23 @@ schedule earlier or dispatch manually.
 
 ## Roadmap
 
-1. **"How this works" page** — currently a stub at `/how-it-works`. Should
-   explain tiers, the noise floor, and where the numbers come from.
-2. **Share image** — the share button is a placeholder that admits it isn't
-   wired up. Wants an OG image per team per week.
-3. **Remember the chosen team** — the picker works (PR #11) but does not
+Done since the first version of this list: the share button and per-team
+preview card (PR #13), and the full "How this works" page with the measured
+accuracy plus a "model estimate" note under the headline (PR #14). The
+how-it-works page quotes backtest numbers by hand — update it whenever the
+model or `season_backtest.py` results change.
+
+1. **End of season — before the regular season ends (Jan 2027).** With no
+   games left, the guide has nothing to show and will look broken. Needs a
+   "season's over, here's how it ended" state, then a plan for loading the
+   2027 season (`DEFAULT_SEASON`, nflverse schedule release) next fall.
+2. **Remember the chosen team** — the picker works (PR #11) but does not
    remember a choice, and `/` always goes to the Vikings.
-4. **Market-odds comparison** — show the model against the market where a line
-   exists, as a calibration display and a credibility signal.
+3. **Refresh timing** — GitHub starts scheduled runs hours late; consider
+   earlier slots or weekend-morning runs (a workflow change: plan first).
+4. **Market-odds comparison** — blocked on Kalshi's written permission (see
+   Known limitations). If granted: calibrate the simulation's ratings to the
+   futures so headline odds match the market and impacts stay consistent.
 5. **AI features, later** — natural-language summaries of a week, or asking
    "what has to happen for us to win the division?".
 

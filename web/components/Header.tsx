@@ -74,6 +74,21 @@ export default function Header({ data }: { data: PageData }) {
             <dd className="font-semibold">{Math.round(data.topSeedPct)}%</dd>
           </div>
         </dl>
+
+        {/* Says what kind of number this is, right where it is read. The
+            longer explanation, including the measured accuracy, is one tap
+            away. A plain <a> (full page load) so the how-it-works page's
+            back link can tell where the reader came from. */}
+        <p className="mt-3 text-xs text-(--team-muted)">
+          Model estimate from 100,000 simulated seasons — betting markets may
+          differ by a few points.{" "}
+          <a
+            href="/how-it-works"
+            className="font-semibold whitespace-nowrap text-(--team-fg) underline underline-offset-2"
+          >
+            How it works
+          </a>
+        </p>
       </div>
     </header>
   );
