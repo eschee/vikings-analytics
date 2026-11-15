@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { CSSProperties } from "react";
 
 import TeamPicker from "./TeamPicker";
@@ -38,9 +39,14 @@ export default function Header({ data }: { data: PageData }) {
     >
       <div className="relative mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
         <div className="flex items-center justify-between gap-3">
-          <span className="font-display text-xl font-bold tracking-[0.14em]">
+          {/* The wordmark goes home, to the team-picking start screen. */}
+          <Link
+            href="/"
+            className="font-display text-xl font-bold tracking-[0.14em]"
+          >
             HATEWATCH
-          </span>
+            <span className="sr-only"> — choose a different team</span>
+          </Link>
           <TeamPicker
             current={data.teamAbbr}
             currentNick={data.teamNick}
