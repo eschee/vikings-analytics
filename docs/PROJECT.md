@@ -127,7 +127,7 @@ PY
 
 ## What is built
 
-PRs #1–#13 are merged. Each was security-reviewed before merge.
+PRs #1–#15 are merged. Each was security-reviewed before merge.
 
 | PR | what it added |
 |---|---|
@@ -145,6 +145,8 @@ PRs #1–#13 are merged. Each was security-reviewed before merge.
 | **#12** | The season-odds backtest and the v5 model it chose (see Key results). |
 | **#13** | A working share button (system share sheet, else copy) and a per-team link-preview card. |
 | **#14** | The full "How this works" page with the measured accuracy, and a "model estimate" note under the headline. |
+| **#15** | A pick-your-team start screen at `/`, and a share button that copies on laptops (Chrome on macOS left `navigator.share` hanging). |
+| **#16** | Per-game significance tiers, 200k sims, other-conference games never ranked, and "Too close to call" / "Can't really affect you" groups. |
 
 ### Key results
 
@@ -237,6 +239,19 @@ under the 2.0 "Root hard" cutoff, so a game whose true impact was near 2
 points flipped tier between runs on noise alone — observed directly: NE @ DET
 scored Root hard, Root hard, then Doesn't matter across three runs. At 100k
 the floor drops to 1.29 and the band stops being a coin toss. Costs 60s.
+
+**Each game is judged against its own measurement error.** A game counts as
+real ("A little" or above) when its swing is at least 2.5 of its own standard
+errors (`SIGNIFICANCE_Z`), computed from how many simulated seasons fell on
+each side. The earlier rule — the largest swing on games between two
+other-conference teams — broke under v5: the bigger rating jitter lets those
+games reach you through interconference games, the floor jumped from 1.1 to
+1.95 points, and three real week-10 games for the Vikings (1.7–1.9 points, z of
+5–7) were labelled "doesn't matter". Games between two other-conference teams
+are never ranked at all: their only channel is tiny tiebreakers, so any
+measured swing is noise. 200,000 sims (was 100k) shrink the error so smaller
+real effects show; about two minutes per run. The draft goal keeps the old
+control-group floor.
 
 **Impacts by conditioning, not re-simulation.** Each game's winner already
 varies across iterations, so one run answers all 135 games at once. Verified
@@ -356,7 +371,7 @@ model or `season_backtest.py` results change.
 
 ```bash
 # refresh + simulate + save (uses DATABASE_URL)
-python -m hatewatch.run                    # 100k sims, ~60s
+python -m hatewatch.run                    # 200k sims, ~2 min
 python -m hatewatch.run --skip-schema      # production: no DDL rights needed
 
 # terminal report

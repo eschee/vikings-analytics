@@ -153,6 +153,10 @@ export interface GameView {
   /** One entry per rankable goal. */
   goals: Record<RankableGoal, GoalView>;
   overall: OverallView;
+  /** Neither team is in the viewer's conference: such a game can reach their
+   *  odds only through tiny tiebreaker effects, and the model never ranks it
+   *  (hatewatch/impacts.py `_other_conference`). */
+  otherConference: boolean;
 }
 
 /** One team in the picker. `colour` is already validated as #RRGGBB, or
@@ -183,6 +187,8 @@ export interface PageData {
   divisionPct: number;
   topSeedPct: number;
   updatedLabel: string;
+  /** How many seasons the latest run simulated, from sim_runs.n_sims. */
+  nSims: number;
   defaultGoal: Ranking;
   ownGame: GameView | null;
   games: GameView[];
