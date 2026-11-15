@@ -15,7 +15,7 @@ from __future__ import annotations
 # numbers: the win-probability method, the ratings fit, the jitter, the
 # tiebreakers, or the simulation itself.
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v5-recent-ratings-calibrated"   # season_backtest.py, Nov 2026
+MODEL_VERSION = "v5.1-per-game-significance"   # v5 model + per-game tiering, Nov 2026
 
 DEFAULT_SEASON = 2026
 # 100,000 rather than 20,000. At 20k the noise floor for a team sat near
@@ -23,7 +23,12 @@ DEFAULT_SEASON = 2026
 # true impact was around 2 points flipped between "Root hard" and "Doesn't
 # matter" from one run to the next purely on noise. At 100k the floor drops to
 # about 1.3 and that band stops being a coin toss. Costs about 60 seconds.
-DEFAULT_SIMS = 100_000
+#
+# 200k (Nov 2026): games are now judged against their own sampling error
+# (SIGNIFICANCE_Z), which shrinks with more seasons -- doubling them makes
+# effects about 30% smaller measurable, so smaller real games can be shown.
+# Costs about two minutes.
+DEFAULT_SIMS = 200_000
 DEFAULT_SEED = 20260101
 
 # Retention.
@@ -45,10 +50,13 @@ IMPACT_RETENTION_RUNS = 3
 # for the probability goals, draft picks for the draft goal.
 #
 # The bottom cutoff is not a constant. "A little" means the swing is at least
-# as large as the run's own noise floor -- the biggest swing measured on games
-# that cannot really affect this team (see impacts.noise_floor). Below that we
-# cannot tell the number from simulation noise, so the honest label is "doesn't
-# matter" even if the printed figure is not quite zero.
+# SIGNIFICANCE_Z of that game's own standard errors (impacts.significance_
+# floor). Below that we cannot tell the number -- or even its direction --
+# from simulation noise, so the stored label is "doesn't matter"; the site
+# then splits those into "too close to call" (involves your conference) and
+# "can't really affect you" (both teams in the other conference).
+# The draft goal is not yes/no, so it keeps the older control-group floor
+# (impacts.noise_floor).
 # ---------------------------------------------------------------------------
 TIER_MUST_WIN = "must_win"
 TIER_ROOT_HARD = "root_hard"
@@ -57,7 +65,7 @@ TIER_DOESNT_MATTER = "doesnt_matter"
 
 MUST_WIN_THRESHOLD = 10.0       # >= 10 points of swing
 ROOT_HARD_THRESHOLD = 2.0       # >= 2 points of swing
-# "a_little" floor is per-run and per-team; see impacts.noise_floor().
+# "a_little" floor is per-game and per-team; see impacts.significance_floor().
 
 TIER_LABELS = {
     TIER_MUST_WIN: "Must win",
@@ -70,6 +78,13 @@ TIER_LABELS = {
 # noise floor comes out smaller than this. Guards against a lucky run reporting
 # a tiny control-group maximum and then promoting pure noise to "a little".
 MIN_NOISE_FLOOR = 0.25
+
+# How many of its own standard errors a game's swing must reach to count as
+# real (see impacts.significance_floor). 2.5 means a game with no true effect
+# is wrongly called real about 1% of the time, so a "root for X" on a small
+# game points the right way. With 200,000 sims a typical current-week game's
+# error is about 0.2 points, so effects from roughly 0.5 points up show.
+SIGNIFICANCE_Z = 2.5
 
 # ---------------------------------------------------------------------------
 # Reason codes

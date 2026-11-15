@@ -23,6 +23,7 @@ from .config import (
     MIN_NOISE_FLOOR,
     MUST_WIN_THRESHOLD,
     ROOT_HARD_THRESHOLD,
+    SIGNIFICANCE_Z,
     TIER_A_LITTLE,
     TIER_DOESNT_MATTER,
     TIER_MUST_WIN,
@@ -119,6 +120,59 @@ def _conditional_means(
     )
 
 
+def _other_conference(game, team: str, conf: dict[str, str]) -> bool:
+    """True when neither team in the game is in `team`'s conference.
+
+    Such a game reaches a team's playoff, division or #1-seed odds only
+    through strength-of-victory and strength-of-schedule tiebreakers -- far
+    too small to measure. So any swing it shows is noise (or, for far-off
+    games, the rating-jitter selection effect), and it is never tiered above
+    "doesn't matter", however the numbers fall. Without this rule, roughly
+    one such game a week clears the significance bar by luck: in testing,
+    MIA @ IND came out as "a little" for the Vikings at 0.6 points.
+    """
+    own = conf.get(team)
+    return conf.get(game.home) != own and conf.get(game.away) != own
+
+
+def _binary_std_err(
+    v_home: np.ndarray, v_away: np.ndarray, n_home: int, n_away: int
+) -> np.ndarray:
+    """Standard error of (v_home - v_away) for a yes/no outcome, per team.
+
+    Each arm is the share of n simulated seasons in which something happened
+    (made the playoffs, won the division...). The sampling error of a share p
+    over n seasons is sqrt(p(1-p)/n); the two arms are independent, so their
+    variances add. A game that never or always went one way has no split to
+    measure, so its error is infinite and it can never be called real.
+    """
+    if n_home == 0 or n_away == 0:
+        return np.full_like(v_home, np.inf)
+    return np.sqrt(
+        v_home * (1.0 - v_home) / n_home + v_away * (1.0 - v_away) / n_away
+    )
+
+
+def significance_floor(std_err: float) -> float:
+    """The smallest swing this game can show and still be called real.
+
+    WHY NOT THE CONTROL GROUP. The old floor was the largest swing measured on
+    games between two other-conference teams, on the theory that those cannot
+    reach you. But the rating jitter makes them reach you a little: picking out
+    the seasons where an AFC team won also picks out seasons where it drew a
+    high rating, and it then beats NFC teams more often. Model v5 enlarged the
+    jitter and that floor jumped from 1.1 to 1.95 points for the Vikings --
+    above three real current-week effects of 1.7-1.9 points (z of 5 to 7),
+    which the site then labelled "doesn't matter".
+
+    Judging each game against its OWN sampling error fixes that, and lets
+    small real effects through. SIGNIFICANCE_Z standard errors keeps the
+    chance of calling a pure-noise game "real" to about 1% per game, so the
+    direction shown can be trusted. MIN_NOISE_FLOOR still applies on top.
+    """
+    return max(SIGNIFICANCE_Z * std_err, MIN_NOISE_FLOOR)
+
+
 def noise_floor(
     swings: dict[str, np.ndarray],
     games,
@@ -191,18 +245,24 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
         signed: dict[str, np.ndarray] = {}
         home_arm: dict[str, np.ndarray] = {}
         away_arm: dict[str, np.ndarray] = {}
+        std_err: dict[str, np.ndarray] = {}
         for j, g in enumerate(res.games):
             hw = res.home_wins[:, j]
-            v_home, v_away, _, _ = _conditional_means(matrix, hw)
+            v_home, v_away, n_home, n_away = _conditional_means(matrix, hw)
             signed[g.game_id] = (v_home - v_away) * scale
             home_arm[g.game_id] = v_home
             away_arm[g.game_id] = v_away
+            if goal != "draft":
+                std_err[g.game_id] = _binary_std_err(
+                    v_home, v_away, n_home, n_away
+                ) * scale
 
-        # Pass two: tier and classify.
+        # Pass two: tier and classify. Only the draft still uses the
+        # control-group floor; see significance_floor() for why.
         floors = {
             abbr: noise_floor(signed, res.games, conf, abbr, col, goal)
             for abbr, col in index.items()
-        }
+        } if goal == "draft" else {}
         for g in res.games:
             diff = signed[g.game_id]
             for abbr, col in index.items():
@@ -230,7 +290,19 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
                         root_for_win_pct=(
                             g.p_home if root_for == g.home else 1.0 - g.p_home
                         ) * 100.0,
-                        tier=assign_tier(swing, floors[abbr]),
+                        tier=(
+                            TIER_DOESNT_MATTER
+                            if goal != "draft"
+                            and _other_conference(g, abbr, conf)
+                            else assign_tier(
+                                swing,
+                                floors[abbr]
+                                if goal == "draft"
+                                else significance_floor(
+                                    float(std_err[g.game_id][col])
+                                ),
+                            )
+                        ),
                         reason_code=reason_code(
                             abbr, g.home, g.away, goal, conf, division,
                             playoff_pct, top_seed_pct,

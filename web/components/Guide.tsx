@@ -170,7 +170,7 @@ export default function Guide({ data }: { data: PageData }) {
           />
         ) : null}
 
-        <DoesntMatterList games={ignorable} />
+        <DoesntMatterList games={ignorable} conference={data.conference} />
       </div>
 
       <div className="space-y-6 lg:hidden">

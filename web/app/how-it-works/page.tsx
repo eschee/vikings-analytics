@@ -76,7 +76,7 @@ export default function HowThisWorks() {
             </li>
             <li>
               <span className="font-semibold text-brand">
-                The rest of the season is played out 100,000 times.
+                The rest of the season is played out 200,000 times.
               </span>{" "}
               Each simulated season also gets its own &ldquo;we might be wrong
               about this team&rdquo; adjustment for every team, held for the
@@ -92,7 +92,7 @@ export default function HowThisWorks() {
             </li>
             <li>
               <span className="font-semibold text-brand">We count.</span> If a
-              team makes the playoffs in 74,000 of the 100,000 seasons, that is
+              team makes the playoffs in 148,000 of the 200,000 seasons, that is
               a 74% chance. Division and #1 seed odds work the same way.
             </li>
           </ol>
@@ -100,7 +100,7 @@ export default function HowThisWorks() {
 
         <Section title="What makes a game matter">
           <p>
-            To value one game, we split the 100,000 seasons by who won it and
+            To value one game, we split the 200,000 seasons by who won it and
             compare the two halves. If your playoff chance is 76% in the
             seasons where the Cardinals won and 73% where the Rams won, that
             game is worth about 3 points to you, and you should root for the
@@ -122,8 +122,23 @@ export default function HowThisWorks() {
             <ul className="mt-1 space-y-1">
               <li>Must win — moves that goal by 10 points or more.</li>
               <li>Root hard — 2 points or more.</li>
-              <li>A little — smaller, but bigger than simulation noise.</li>
-              <li>Doesn&apos;t matter — too small to tell apart from noise.</li>
+              <li>
+                A little — smaller, but clearly real: at least 2.5 times the
+                game&apos;s own measurement error, so the side we name is
+                almost certainly the right one. Use these as tiebreakers.
+              </li>
+            </ul>
+            <p className="mt-2">Everything else is listed in two groups:</p>
+            <ul className="mt-1 space-y-1">
+              <li>
+                Too close to call — involves your conference, so it can nudge
+                your odds, but by less than 200,000 simulated seasons can
+                measure. We won&apos;t guess a side.
+              </li>
+              <li>
+                Can&apos;t really affect you — both teams are in the other
+                conference; they reach you only through tiny tiebreakers.
+              </li>
             </ul>
           </div>
         </Section>

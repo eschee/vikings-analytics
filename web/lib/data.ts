@@ -114,7 +114,7 @@ function num(value: string | number | null | undefined): number {
  *  that, fourteen games' worth of noise would add up into small fake scores.
  */
 function buildOverall(
-  game: Omit<GameView, "overall">,
+  game: Omit<GameView, "overall" | "otherConference">,
   homeAbbr: string,
   awayAbbr: string,
   nicks: Record<string, string>,
@@ -249,10 +249,13 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     directory(),
   ]);
   const colours = dir.colours[abbr];
+  const confOf = Object.fromEntries(
+    dir.entries.map((e) => [e.abbr, e.conference]),
+  );
 
   // Group the flat impact rows into one entry per game, with its goals.
   // `overall` is filled in once all three goals are present.
-  const byGame = new Map<string, Omit<GameView, "overall">>();
+  const byGame = new Map<string, Omit<GameView, "overall" | "otherConference">>();
   const sides = new Map<string, { home: string; away: string }>();
   for (const row of impacts) {
     const goal = row.goal as RankableGoal;
@@ -313,7 +316,13 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     .filter((g) => RANKABLE_GOALS.every((k) => g.goals[k] !== undefined))
     .map((g) => {
       const s = sides.get(g.gameId)!;
-      return { ...g, overall: buildOverall(g, s.home, s.away, nicks, current) };
+      return {
+        ...g,
+        overall: buildOverall(g, s.home, s.away, nicks, current),
+        otherConference:
+          confOf[s.home] !== team?.team_conf &&
+          confOf[s.away] !== team?.team_conf,
+      };
     });
 
   return {
@@ -333,6 +342,7 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     divisionPct: num(odds?.division_pct),
     topSeedPct: num(odds?.top_seed_pct),
     updatedLabel: run.updated,
+    nSims: Number(run.n_sims),
     // The combined score already discounts a settled race -- a locked playoff
     // spot barely moves, so it contributes little -- which retires the old
     // "switch to division at 97%" rule.
