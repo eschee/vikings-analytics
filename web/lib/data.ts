@@ -17,9 +17,11 @@ import {
   nicknames,
   teamInfo,
   teamOdds,
+  teamDirectory,
   teamRecord,
   weekImpacts,
 } from "./db";
+import { isHexColour, teamTheme } from "./colors";
 import {
   GOAL_LABELS,
   OVERALL_WEIGHTS,
@@ -30,6 +32,7 @@ import {
   type OverallView,
   type PageData,
   type RankableGoal,
+  type TeamEntry,
   type Tier,
 } from "./types";
 
@@ -66,6 +69,32 @@ export async function teamAllowlist(): Promise<string[]> {
   "use cache";
   cacheLife("hours");
   return allowedTeams();
+}
+
+/** All 32 teams for the picker, with their raw colours for the banner.
+ *  Cached like the allowlist: the teams table changes once a decade. */
+export async function directory(): Promise<{
+  entries: TeamEntry[];
+  colours: Record<string, { primary: string | null; secondary: string | null }>;
+}> {
+  "use cache";
+  cacheLife("hours");
+  const rows = await teamDirectory();
+  return {
+    entries: rows.map((r) => ({
+      abbr: r.team_abbr,
+      nick: r.team_nick,
+      conference: r.team_conf,
+      division: r.team_division.replace(/^(AFC|NFC)\s+/, ""),
+      colour: isHexColour(r.team_color) ? r.team_color : null,
+    })),
+    colours: Object.fromEntries(
+      rows.map((r) => [
+        r.team_abbr,
+        { primary: r.team_color, secondary: r.team_color2 },
+      ]),
+    ),
+  };
 }
 
 function num(value: string | number | null | undefined): number {
@@ -211,13 +240,15 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     };
   }
 
-  const [team, record, odds, nicks, impacts] = await Promise.all([
+  const [team, record, odds, nicks, impacts, dir] = await Promise.all([
     teamInfo(abbr),
     teamRecord(abbr, run.season),
     teamOdds(run.run_id, abbr),
     nicknames(),
     weekImpacts(run.run_id, abbr, run.week),
+    directory(),
   ]);
+  const colours = dir.colours[abbr];
 
   // Group the flat impact rows into one entry per game, with its goals.
   // `overall` is filled in once all three goals are present.
@@ -288,6 +319,8 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
   return {
     ok: true,
     data: {
+    theme: teamTheme(colours?.primary, colours?.secondary),
+    directory: dir.entries,
     teamNick: team?.team_nick ?? abbr,
     teamName: team?.team_name ?? abbr,
     teamAbbr: abbr,

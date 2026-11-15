@@ -21,7 +21,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Hatewatch — who to root for",
   description:
-    "Which results help the Vikings most, ranked by how much they move the odds.",
+    "Which other NFL results help your team most, ranked by how much they move the odds.",
 };
 
 export const viewport: Viewport = {
