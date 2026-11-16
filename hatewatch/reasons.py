@@ -64,6 +64,8 @@ page. own_game replaces that.
 from __future__ import annotations
 
 from .config import (
+    DRAFT_RIVAL_PICKS,
+    REASON_DRAFT_RIVAL,
     IN_RACE_MAX_PCT,
     REASON_OWN_GAME,
     IN_RACE_MIN_PCT,
@@ -123,4 +125,34 @@ def reason_code(
             return REASON_WILDCARD_COMPETITOR
 
     # 6. Same conference, but the other team's season is effectively settled.
+    return REASON_OTHER
+
+
+def draft_reason_code(
+    subject: str,
+    home: str,
+    away: str,
+    avg_pick: dict[str, float],
+) -> str:
+    """Why a game matters to `subject`'s DRAFT position (tank mode).
+
+    The playoff codes do not fit the draft: conference and division do not
+    matter there, only who finishes near you in the overall order. So:
+
+    1. own_game -- the subject is playing (to tank, they want to lose).
+    2. draft_rival -- a participant's average projected pick is within
+       DRAFT_RIVAL_PICKS of the subject's, so either could finish ahead of
+       the other; their loss is a "win" for the subject.
+    3. other -- everything else: these reach the subject mostly through the
+       strength-of-schedule tiebreaker, or through a team far away in the
+       order, so the effect is small.
+    """
+    if subject in (home, away):
+        return REASON_OWN_GAME
+    mine = avg_pick.get(subject)
+    if mine is not None and any(
+        abs(avg_pick.get(t, float("inf")) - mine) <= DRAFT_RIVAL_PICKS
+        for t in (home, away)
+    ):
+        return REASON_DRAFT_RIVAL
     return REASON_OTHER

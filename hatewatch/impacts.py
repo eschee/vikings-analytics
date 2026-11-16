@@ -19,17 +19,21 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import (
+    DRAFT_MIN_FLOOR,
+    DRAFT_MUST_WIN_PICKS,
+    DRAFT_ROOT_HARD_PICKS,
     GOALS,
     MIN_NOISE_FLOOR,
     MUST_WIN_THRESHOLD,
     ROOT_HARD_THRESHOLD,
     SIGNIFICANCE_Z,
+    TANK_GOALS,
     TIER_A_LITTLE,
     TIER_DOESNT_MATTER,
     TIER_MUST_WIN,
     TIER_ROOT_HARD,
 )
-from .reasons import reason_code
+from .reasons import draft_reason_code, reason_code
 
 # Importable because hatewatch/__init__.py puts analysis/ on sys.path.
 from simulate import PAIRED_GOAL_ROW  # noqa: E402
@@ -41,10 +45,15 @@ HIGHER_IS_BETTER = {
     "division": True,
     "top_seed": True,
     "draft": False,
+    "top_pick": True,
 }
 # Probability goals are reported in percentage points; the draft in picks.
 GOAL_SCALE = {"playoffs": 100.0, "division": 100.0, "top_seed": 100.0,
-              "draft": 1.0}
+              "draft": 1.0, "top_pick": 100.0}
+# (must win, root hard) cutoffs per goal, in the goal's own units.
+TIER_CUTOFFS = {
+    g: (MUST_WIN_THRESHOLD, ROOT_HARD_THRESHOLD) for g in GOAL_SCALE
+} | {"draft": (DRAFT_MUST_WIN_PICKS, DRAFT_ROOT_HARD_PICKS)}
 
 
 @dataclass
@@ -70,6 +79,10 @@ class TeamOdds:
     division_pct: float
     top_seed_pct: float
     avg_seed: float | None
+    # Tank mode.
+    avg_draft_pick: float
+    top_pick_pct: float
+    top5_pick_pct: float
 
 
 def team_odds(res) -> list[TeamOdds]:
@@ -83,6 +96,7 @@ def team_odds(res) -> list[TeamOdds]:
         # Average seed only over the iterations where they actually got in.
         # Averaging zeros for the misses would invent a "#0 seed".
         got_in = seeds[made]
+        picks = res.team_draft_pick[:, col]
         out.append(
             TeamOdds(
                 team=team,
@@ -90,6 +104,9 @@ def team_odds(res) -> list[TeamOdds]:
                 division_pct=float(res.team_won_division[:, col].mean()) * 100.0,
                 top_seed_pct=float(res.team_won_top_seed[:, col].mean()) * 100.0,
                 avg_seed=float(got_in.mean()) if got_in.size else None,
+                avg_draft_pick=float(picks.mean()),
+                top_pick_pct=float((picks == 1).mean()) * 100.0,
+                top5_pick_pct=float((picks <= 5).mean()) * 100.0,
             )
         )
     return out
@@ -99,6 +116,8 @@ def _goal_matrix(res, goal: str) -> np.ndarray:
     """(n_sims, 32) outcome matrix for a goal, as floats."""
     if goal == "draft":
         return res.team_draft_pick.astype(np.float64)
+    if goal == "top_pick":
+        return (res.team_draft_pick == 1).astype(np.float64)
     return {
         "playoffs": res.team_made_playoffs,
         "division": res.team_won_division,
@@ -156,7 +175,24 @@ def _binary_std_err(
     )
 
 
-def significance_floor(std_err: float) -> float:
+def _mean_std_err(
+    matrix: np.ndarray, home_won: np.ndarray, n_home: int, n_away: int
+) -> np.ndarray:
+    """Standard error of (mean if home wins - mean if away wins), per team,
+    for a numeric outcome such as the draft pick.
+
+    Same idea as _binary_std_err, but the spread within each arm is measured
+    directly (its variance) rather than implied by a share.
+    """
+    if n_home < 2 or n_away < 2:
+        return np.full(matrix.shape[1], np.inf)
+    return np.sqrt(
+        matrix[home_won].var(axis=0, ddof=1) / n_home
+        + matrix[~home_won].var(axis=0, ddof=1) / n_away
+    )
+
+
+def significance_floor(std_err: float, minimum: float = MIN_NOISE_FLOOR) -> float:
     """The smallest swing this game can show and still be called real.
 
     WHY NOT THE CONTROL GROUP. The old floor was the largest swing measured on
@@ -171,43 +207,21 @@ def significance_floor(std_err: float) -> float:
     Judging each game against its OWN sampling error fixes that, and lets
     small real effects through. SIGNIFICANCE_Z standard errors keeps the
     chance of calling a pure-noise game "real" to about 1% per game, so the
-    direction shown can be trusted. MIN_NOISE_FLOOR still applies on top.
+    direction shown can be trusted. `minimum` (MIN_NOISE_FLOOR, or
+    DRAFT_MIN_FLOOR in picks) still applies on top.
+
+    The tank goals are judged the same way. They never had a usable control
+    group anyway: the draft ranks all 32 teams, so every game moves it.
     """
-    return max(SIGNIFICANCE_Z * std_err, MIN_NOISE_FLOOR)
+    return max(SIGNIFICANCE_Z * std_err, minimum)
 
 
-def noise_floor(
-    swings: dict[str, np.ndarray],
-    games,
-    conf: dict[str, str],
-    team: str,
-    team_col: int,
-    goal: str,
-) -> float:
-    """Largest swing this team saw on games that cannot really affect it.
-
-    Games between two teams of the other conference reach this team only
-    through strength of victory and strength of schedule, so their true impact
-    is a hair above nothing. Whatever we measure on them is therefore mostly
-    simulation noise, and anything smaller cannot be distinguished from it.
-
-    The draft goal has no such control group -- it ranks all 32 teams, so every
-    result moves it -- and falls back to the configured minimum.
-    """
-    if goal == "draft":
-        return MIN_NOISE_FLOOR
-    subj_conf = conf[team]
-    control = [
-        abs(float(swings[g.game_id][team_col]))
-        for g in games
-        if conf.get(g.home) != subj_conf and conf.get(g.away) != subj_conf
-    ]
-    if not control:
-        return MIN_NOISE_FLOOR
-    return max(max(control), MIN_NOISE_FLOOR)
-
-
-def assign_tier(swing: float, floor: float) -> str:
+def assign_tier(
+    swing: float,
+    floor: float,
+    must_win: float = MUST_WIN_THRESHOLD,
+    root_hard: float = ROOT_HARD_THRESHOLD,
+) -> str:
     """Bucket a swing. Thresholds come from config; the floor is per-run.
 
     The noise floor GATES the whole ladder rather than sitting at the bottom of
@@ -220,9 +234,9 @@ def assign_tier(swing: float, floor: float) -> str:
     """
     if swing < floor:
         return TIER_DOESNT_MATTER
-    if swing >= MUST_WIN_THRESHOLD:
+    if swing >= must_win:
         return TIER_MUST_WIN
-    if swing >= ROOT_HARD_THRESHOLD:
+    if swing >= root_hard:
         return TIER_ROOT_HARD
     return TIER_A_LITTLE
 
@@ -232,6 +246,7 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
     odds = team_odds(res)
     playoff_pct = {o.team: o.playoff_pct for o in odds}
     top_seed_pct = {o.team: o.top_seed_pct for o in odds}
+    avg_pick = {o.team: o.avg_draft_pick for o in odds}
     conf = {a: t.conf for a, t in teams.items()}
     division = {a: t.division for a, t in teams.items()}
     index = res.team_index
@@ -242,9 +257,11 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
         matrix = _goal_matrix(res, goal)
         scale = GOAL_SCALE[goal]
         higher_better = HIGHER_IS_BETTER[goal]
+        tank = goal in TANK_GOALS
+        must_win, root_hard = TIER_CUTOFFS[goal]
+        minimum = DRAFT_MIN_FLOOR if goal == "draft" else MIN_NOISE_FLOOR
 
-        # Pass one: the signed swing per game per team, so the noise floor can
-        # be measured before anything is tiered.
+        # Pass one: the signed swing and its standard error per game per team.
         signed: dict[str, np.ndarray] = {}
         home_arm: dict[str, np.ndarray] = {}
         away_arm: dict[str, np.ndarray] = {}
@@ -267,17 +284,14 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
             signed[g.game_id] = (v_home - v_away) * scale
             home_arm[g.game_id] = v_home
             away_arm[g.game_id] = v_away
-            if goal != "draft":
+            if goal == "draft":
+                std_err[g.game_id] = _mean_std_err(matrix, hw, n_home, n_away)
+            else:
                 std_err[g.game_id] = _binary_std_err(
                     v_home, v_away, n_home, n_away
                 ) * scale
 
-        # Pass two: tier and classify. Only the draft still uses the
-        # control-group floor; see significance_floor() for why.
-        floors = {
-            abbr: noise_floor(signed, res.games, conf, abbr, col, goal)
-            for abbr, col in index.items()
-        } if goal == "draft" else {}
+        # Pass two: tier and classify, each game against its own noise.
         for g in res.games:
             diff = signed[g.game_id]
             for abbr, col in index.items():
@@ -305,22 +319,28 @@ def build_rows(res, teams) -> tuple[list[TeamOdds], list[ImpactRow]]:
                         root_for_win_pct=(
                             g.p_home if root_for == g.home else 1.0 - g.p_home
                         ) * 100.0,
+                        # The other-conference rule is for the playoff goals
+                        # only: the draft ranks all 32 teams, so an AFC game
+                        # really can move an NFC team's pick.
                         tier=(
                             TIER_DOESNT_MATTER
-                            if goal != "draft"
-                            and _other_conference(g, abbr, conf)
+                            if not tank and _other_conference(g, abbr, conf)
                             else assign_tier(
                                 swing,
-                                floors[abbr]
-                                if goal == "draft"
-                                else significance_floor(
-                                    float(std_err[g.game_id][col])
+                                significance_floor(
+                                    float(std_err[g.game_id][col]), minimum
                                 ),
+                                must_win,
+                                root_hard,
                             )
                         ),
-                        reason_code=reason_code(
-                            abbr, g.home, g.away, goal, conf, division,
-                            playoff_pct, top_seed_pct,
+                        reason_code=(
+                            draft_reason_code(abbr, g.home, g.away, avg_pick)
+                            if tank
+                            else reason_code(
+                                abbr, g.home, g.away, goal, conf, division,
+                                playoff_pct, top_seed_pct,
+                            )
                         ),
                         value_if_root_for_wins=v_win,
                         value_if_root_for_loses=v_lose,

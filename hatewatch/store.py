@@ -47,13 +47,16 @@ def insert_team_odds(
     with conn.cursor() as cur:
         with cur.copy(
             "COPY team_odds (run_id, team, playoff_pct, division_pct, "
-            "top_seed_pct, avg_seed) FROM STDIN"
+            "top_seed_pct, avg_seed, avg_draft_pick, top_pick_pct, "
+            "top5_pick_pct) FROM STDIN"
         ) as cp:
             for o in odds:
                 cp.write_row(
                     (run_id, o.team, round(o.playoff_pct, 3),
                      round(o.division_pct, 3), round(o.top_seed_pct, 3),
-                     None if o.avg_seed is None else round(o.avg_seed, 3))
+                     None if o.avg_seed is None else round(o.avg_seed, 3),
+                     round(o.avg_draft_pick, 3), round(o.top_pick_pct, 3),
+                     round(o.top5_pick_pct, 3))
                 )
     return len(odds)
 

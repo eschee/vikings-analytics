@@ -15,7 +15,7 @@ from __future__ import annotations
 # numbers: the win-probability method, the ratings fit, the jitter, the
 # tiebreakers, or the simulation itself.
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v5.2-paired-replays"   # v5 model, per-game tiering, paired current-week impacts
+MODEL_VERSION = "v5.3-tank-mode"   # v5.2 + NFL draft order (SOS tiebreak, playoff teams last), tank goals
 
 DEFAULT_SEASON = 2026
 # 100,000 rather than 20,000. At 20k the noise floor for a team sat near
@@ -63,8 +63,9 @@ IMPACT_RETENTION_RUNS = 3
 # from simulation noise, so the stored label is "doesn't matter"; the site
 # then splits those into "too close to call" (involves your conference) and
 # "can't really affect you" (both teams in the other conference).
-# The draft goal is not yes/no, so it keeps the older control-group floor
-# (impacts.noise_floor).
+# The tank goals (draft position, #1 pick) are judged the same way, but with
+# no conference split -- the draft ranks all 32 teams together -- and draft
+# position, being in picks, has its own cutoffs (DRAFT_* below).
 # ---------------------------------------------------------------------------
 TIER_MUST_WIN = "must_win"
 TIER_ROOT_HARD = "root_hard"
@@ -74,6 +75,18 @@ TIER_DOESNT_MATTER = "doesnt_matter"
 MUST_WIN_THRESHOLD = 10.0       # >= 10 points of swing
 ROOT_HARD_THRESHOLD = 2.0       # >= 2 points of swing
 # "a_little" floor is per-game and per-team; see impacts.significance_floor().
+
+# The draft goal is measured in PICKS, not percentage points, so it needs its
+# own cutoffs. Set from the week-10 dry run (Nov 2026, 200k + 40k paired):
+# a team's own game moved its average pick by 1.7-3.6 places (more for
+# teams near the playoff line, where a loss also costs a playoff spot and so
+# drops them into the non-playoff picks). Other games topped out at 0.34
+# places, and 95% were under 0.19. So "must win" is in practice a team's own
+# game, and "root hard" is roughly the top 5% of everything else.
+DRAFT_MUST_WIN_PICKS = 1.0
+DRAFT_ROOT_HARD_PICKS = 0.2
+# The smallest swing in picks ever called real, however precisely measured.
+DRAFT_MIN_FLOOR = 0.02
 
 TIER_LABELS = {
     TIER_MUST_WIN: "Must win",
@@ -105,6 +118,7 @@ REASON_WILDCARD_COMPETITOR = "wildcard_competitor"
 REASON_TOP_SEED_RACE = "top_seed_race"
 REASON_TIEBREAKER_EFFECT = "tiebreaker_effect"
 REASON_OTHER = "other"
+REASON_DRAFT_RIVAL = "draft_rival"
 
 REASON_LABELS = {
     REASON_OWN_GAME: "Your own game",
@@ -113,7 +127,13 @@ REASON_LABELS = {
     REASON_TOP_SEED_RACE: "#1 seed race",
     REASON_TIEBREAKER_EFFECT: "Tiebreaker effect",
     REASON_OTHER: "Other",
+    REASON_DRAFT_RIVAL: "Draft rival",
 }
+
+# Tank mode: another team is a "draft rival" when its average projected pick
+# is within this many places of yours -- close enough that either of you
+# could end up ahead of the other.
+DRAFT_RIVAL_PICKS = 4.0
 
 # A team counts as "in the race" when its own playoff odds are neither close to
 # locked nor close to dead. Outside this band its games stop being interesting
@@ -124,4 +144,7 @@ IN_RACE_MAX_PCT = 95.0
 # A team is a #1-seed contender at or above this probability.
 TOP_SEED_CONTENDER_PCT = 5.0
 
-GOALS = ("playoffs", "division", "top_seed", "draft")
+# The last two are tank mode: "draft" is the average pick (lower is better),
+# "top_pick" the chance of holding the #1 overall pick.
+GOALS = ("playoffs", "division", "top_seed", "draft", "top_pick")
+TANK_GOALS = ("draft", "top_pick")
