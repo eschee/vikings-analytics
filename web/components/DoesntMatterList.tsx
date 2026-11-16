@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { GameView } from "@/lib/types";
+import type { GameView, Mode } from "@/lib/types";
 
 /** The games with no measurable effect this week, in two honest groups,
  *  collapsed by default.
@@ -75,9 +75,11 @@ function Group({
 export default function DoesntMatterList({
   games,
   conference,
+  mode = "contend",
 }: {
   games: GameView[];
   conference: string;
+  mode?: Mode;
 }) {
   const close = games.filter((g) => !g.otherConference);
   const unreachable = games.filter((g) => g.otherConference);
@@ -88,7 +90,11 @@ export default function DoesntMatterList({
       <Group
         id="too-close"
         title="Too close to call"
-        note="These involve your conference but move your odds by less than a tenth of a point, or by less than we can measure — so we won't guess a side."
+        note={
+          mode === "tank"
+            ? "These move your draft position too little to measure — so we won't guess a side."
+            : "These involve your conference but move your odds by less than a tenth of a point, or by less than we can measure — so we won't guess a side."
+        }
         games={close}
       />
       <Group

@@ -10,7 +10,7 @@ import ShareButton from "./ShareButton";
 import YourGameCard from "./YourGameCard";
 import { shareSummary, type ShareSummary } from "@/lib/share";
 import {
-  RANKABLE_GOALS,
+  goalsOf,
   type GameView,
   type PageData,
   type Ranking,
@@ -58,17 +58,20 @@ function Extras({ share }: { share: ShareSummary }) {
 function strength(game: GameView, ranking: Ranking): number {
   return ranking === "overall"
     ? game.overall.score
-    : game.goals[ranking].impact;
+    : (game.goals[ranking]?.impact ?? 0);
 }
 
 function matters(game: GameView, ranking: Ranking): boolean {
   return ranking === "overall"
     ? game.overall.score > 0
-    : game.goals[ranking].tier !== "doesnt_matter";
+    : (game.goals[ranking]?.tier ?? "doesnt_matter") !== "doesnt_matter";
 }
 
 export default function Guide({ data }: { data: PageData }) {
   const [ranking, setRanking] = useState<Ranking>(data.defaultGoal);
+  const tank = data.mode === "tank";
+  // A run saved before tank mode has no draft numbers to rank by.
+  const tankUnavailable = tank && data.avgDraftPick === null;
   const [openId, setOpenId] = useState<string | null>(null);
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
   // The share message always uses the Overall ranking, whatever the reader
@@ -87,7 +90,7 @@ export default function Guide({ data }: { data: PageData }) {
     const listed = sorted.filter((g) => matters(g, ranking));
     const rest = sorted.filter((g) => !matters(g, ranking));
     const mattersElsewhere = (g: GameView) =>
-      RANKABLE_GOALS.some((k) => g.goals[k].tier !== "doesnt_matter");
+      goalsOf(g).some((k) => g.goals[k]!.tier !== "doesnt_matter");
     return {
       listed,
       otherGoals: rest.filter(mattersElsewhere),
@@ -104,6 +107,7 @@ export default function Guide({ data }: { data: PageData }) {
             teamAbbr={data.teamAbbr}
             teamNick={data.teamNick}
             ranking={ranking}
+            mode={data.mode}
           />
         ) : null}
         <div className="hidden space-y-6 lg:block">
@@ -117,24 +121,49 @@ export default function Guide({ data }: { data: PageData }) {
             <h2 className="font-display text-2xl font-bold text-brand">
               Root for
             </h2>
-            <GoalSelector value={ranking} onChange={setRanking} />
+            <GoalSelector
+              value={ranking}
+              onChange={setRanking}
+              goals={data.goals}
+              withOverall={!tank}
+            />
           </div>
+
+          {tank ? (
+            <p className="text-sm leading-relaxed text-muted">
+              Tank mode ranks games by how much they improve your draft pick.
+              That usually means rooting against your own team — and for the
+              teams just below you in the standings.
+            </p>
+          ) : null}
 
           {/* A team that is all but out gets a plain explanation instead of a
               page of zeros that looks like a bug. Under 1% means fewer than
-              1,000 of the 100,000 simulated seasons reach the playoffs. */}
-          {data.playoffPct < 1 ? (
+              2,000 of the 200,000 simulated seasons reach the playoffs. */}
+          {!tank && data.playoffPct < 1 ? (
             <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm leading-relaxed text-muted">
               <span className="font-semibold text-brand">
                 The {data.teamNick} are all but out of the playoff race
               </span>{" "}
               — they reach the playoffs in under 1% of simulated seasons, so
               no result this week moves their odds much. Any games that still
-              matter a little are listed below.
+              matter a little are listed below.{" "}
+              <a
+                href={`/${data.teamAbbr.toLowerCase()}/tank`}
+                className="font-semibold text-brand underline underline-offset-2"
+              >
+                Switch to tank mode
+              </a>{" "}
+              to see which results help their draft pick instead.
             </p>
           ) : null}
 
-          {listed.length > 0 ? (
+          {tankUnavailable ? (
+            <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm text-muted">
+              Tank mode is new, and the latest update was made before it
+              existed. Its rankings appear after the next update.
+            </p>
+          ) : listed.length > 0 ? (
             <ul className="space-y-3">
               {listed.map((game) => (
                 <RootForRow
@@ -149,11 +178,13 @@ export default function Guide({ data }: { data: PageData }) {
                 />
               ))}
             </ul>
-          ) : data.playoffPct < 1 ? null : (
+          ) : !tank && data.playoffPct < 1 ? null : (
             // An eliminated team already has the note above; saying "nothing
             // matters" twice reads like an error.
             <p className="rounded-2xl border border-line bg-card px-5 py-4 text-sm text-muted">
-              No other game this week moves your odds beyond simulation noise.
+              {tank
+                ? "No other game this week moves your draft position beyond simulation noise."
+                : "No other game this week moves your odds beyond simulation noise."}
             </p>
           )}
         </section>
@@ -170,7 +201,11 @@ export default function Guide({ data }: { data: PageData }) {
           />
         ) : null}
 
-        <DoesntMatterList games={ignorable} conference={data.conference} />
+        <DoesntMatterList
+          games={ignorable}
+          conference={data.conference}
+          mode={data.mode}
+        />
       </div>
 
       <div className="space-y-6 lg:hidden">

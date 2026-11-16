@@ -10,6 +10,11 @@
 --
 -- Widening an allowlist is safe for stored rows: every existing reason_code is
 -- still permitted, so nothing already saved can violate the new constraint.
+--
+-- 'draft_rival' (tank mode) is listed here too, not only in 006. Every file
+-- re-runs on every load, so this one runs BEFORE 006 each time; with the old
+-- six-code list it would fail on any stored draft_rival row. The two lists
+-- must stay identical.
 
 ALTER TABLE game_impacts
     DROP CONSTRAINT IF EXISTS game_impacts_reason_known;
@@ -17,4 +22,5 @@ ALTER TABLE game_impacts
 ALTER TABLE game_impacts
     ADD CONSTRAINT game_impacts_reason_known CHECK (
         reason_code IN ('own_game', 'division_rival', 'wildcard_competitor',
-                        'top_seed_race', 'tiebreaker_effect', 'other'));
+                        'top_seed_race', 'tiebreaker_effect', 'other',
+                        'draft_rival'));

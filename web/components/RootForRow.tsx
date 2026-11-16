@@ -7,8 +7,8 @@ import { pct } from "@/lib/format";
 import { reasonSentence, winChancePhrase } from "@/lib/reasons";
 import {
   GOAL_LABELS,
+  MODE_GOALS,
   OVERALL_WEIGHTS,
-  RANKABLE_GOALS,
   type GameView,
   type Ranking,
 } from "@/lib/types";
@@ -26,8 +26,10 @@ import {
  *  The whole summary is a <button> carrying aria-expanded and aria-controls,
  *  so the state is announced and the panel is associated with its trigger. */
 
-const WEIGHTS_TEXT = RANKABLE_GOALS.map(
-  (g) => `${GOAL_LABELS[g].toLowerCase()} ${Math.round(OVERALL_WEIGHTS[g] * 100)}%`,
+// Only contend mode has an Overall ranking, so only its weights are described.
+const WEIGHTS_TEXT = MODE_GOALS.contend.map(
+  (g) =>
+    `${GOAL_LABELS[g].toLowerCase()} ${Math.round((OVERALL_WEIGHTS[g] ?? 0) * 100)}%`,
 ).join(", ");
 
 export default function RootForRow({
@@ -53,14 +55,14 @@ export default function RootForRow({
 }) {
   const overall = game.overall;
   const isOverall = ranking === "overall";
-  const goalView = isOverall ? null : game.goals[ranking];
+  const goalView = isOverall ? null : (game.goals[ranking] ?? null);
 
   const rootFor = goalView?.rootFor ?? overall.rootFor;
   const rootForNick = goalView?.rootForNick ?? overall.rootForNick;
   const againstNick = goalView?.againstNick ?? overall.againstNick;
   const winPct = goalView?.rootForWinPct ?? overall.rootForWinPct;
   // The reason should explain the call shown on the row.
-  const reasonView = goalView ?? game.goals[overall.reasonGoal];
+  const reasonView = goalView ?? game.goals[overall.reasonGoal]!;
 
   const mostly =
     isOverall && overall.biggestGoal

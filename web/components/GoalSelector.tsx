@@ -1,6 +1,6 @@
 "use client";
 
-import { GOAL_LABELS, RANKABLE_GOALS, type Ranking } from "@/lib/types";
+import { GOAL_LABELS, type RankableGoal, type Ranking } from "@/lib/types";
 
 /** A real <select>, styled to match the pill in the design.
  *
@@ -8,21 +8,26 @@ import { GOAL_LABELS, RANKABLE_GOALS, type Ranking } from "@/lib/types";
  *  screen-reader announcement and the mobile picker all come for free and
  *  correctly. The chevron is drawn alongside and hidden from assistive tech.
  *
- *  "Overall" -- the combined Root score -- comes first and is the default;
- *  the single goals stay available for anyone who wants one race. */
-
-const OPTIONS: { value: Ranking; label: string }[] = [
-  { value: "overall", label: "Overall" },
-  ...RANKABLE_GOALS.map((g) => ({ value: g, label: GOAL_LABELS[g] })),
-];
+ *  In contend mode "Overall" -- the combined Root score -- comes first and
+ *  is the default; the single goals stay available for anyone who wants one
+ *  race. Tank mode offers its two goals only (see TANK_WEIGHTS for why there
+ *  is no tank Overall). */
 
 export default function GoalSelector({
   value,
   onChange,
+  goals,
+  withOverall,
 }: {
   value: Ranking;
   onChange: (ranking: Ranking) => void;
+  goals: readonly RankableGoal[];
+  withOverall: boolean;
 }) {
+  const options: { value: Ranking; label: string }[] = [
+    ...(withOverall ? [{ value: "overall" as const, label: "Overall" }] : []),
+    ...goals.map((g) => ({ value: g, label: GOAL_LABELS[g] })),
+  ];
   return (
     <div className="flex items-center gap-2 rounded-full border border-line bg-card py-2 pr-3 pl-4">
       <label htmlFor="rank-goal" className="text-sm text-muted">
@@ -35,7 +40,7 @@ export default function GoalSelector({
           onChange={(e) => onChange(e.target.value as Ranking)}
           className="appearance-none bg-transparent pr-5 text-sm font-semibold text-brand"
         >
-          {OPTIONS.map((o) => (
+          {options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>

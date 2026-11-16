@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 
-import type { TeamEntry } from "@/lib/types";
+import type { Mode, TeamEntry } from "@/lib/types";
 
 /** The team switcher in the banner's top-right corner.
  *
@@ -28,10 +28,13 @@ export default function TeamPicker({
   current,
   currentNick,
   teams,
+  mode = "contend",
 }: {
   current: string;
   currentNick: string;
   teams: TeamEntry[];
+  /** Picking another team keeps you in the same mode. */
+  mode?: Mode;
 }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -107,7 +110,9 @@ export default function TeamPicker({
                         return (
                           <li key={t.abbr}>
                             <Link
-                              href={`/${t.abbr.toLowerCase()}`}
+                              href={`/${t.abbr.toLowerCase()}${
+                                mode === "tank" ? "/tank" : ""
+                              }`}
                               aria-current={isCurrent ? "page" : undefined}
                               onClick={() => setOpen(false)}
                               className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-page ${

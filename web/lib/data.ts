@@ -24,11 +24,13 @@ import {
 import { isHexColour, teamTheme } from "./colors";
 import {
   GOAL_LABELS,
+  MODE_GOALS,
   OVERALL_WEIGHTS,
-  RANKABLE_GOALS,
+  TANK_WEIGHTS,
   type GameView,
   type GoalShift,
   type GoalView,
+  type Mode,
   type OverallView,
   type PageData,
   type RankableGoal,
@@ -101,7 +103,7 @@ function num(value: string | number | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
 }
 
-/** Fold one game's three goals into a single Root score.
+/** Fold one game's goals into a single Root score.
  *
  *  The goals can point at different teams -- a Rams loss helps the wild-card
  *  race while a Rams win can help the division -- so each swing is first given
@@ -118,17 +120,20 @@ function buildOverall(
   homeAbbr: string,
   awayAbbr: string,
   nicks: Record<string, string>,
-  current: Record<RankableGoal, number>,
+  current: Partial<Record<RankableGoal, number>>,
+  goals: readonly RankableGoal[],
+  weights: Partial<Record<RankableGoal, number>>,
 ): OverallView {
-  const real = (g: RankableGoal) => game.goals[g].tier !== "doesnt_matter";
+  // Every goal in `goals` is present: loadPageData drops any game missing one.
+  const view = (g: RankableGoal) => game.goals[g]!;
+  const weight = (g: RankableGoal) => weights[g] ?? 0;
+  const real = (g: RankableGoal) => view(g).tier !== "doesnt_matter";
   const towardHome = (g: RankableGoal) =>
-    game.goals[g].rootFor === homeAbbr ? 1 : -1;
+    view(g).rootFor === homeAbbr ? 1 : -1;
 
-  const signed = RANKABLE_GOALS.reduce(
+  const signed = goals.reduce(
     (sum, g) =>
-      real(g)
-        ? sum + towardHome(g) * game.goals[g].impact * OVERALL_WEIGHTS[g]
-        : sum,
+      real(g) ? sum + towardHome(g) * view(g).impact * weight(g) : sum,
     0,
   );
   const rootHome = signed >= 0;
@@ -140,43 +145,41 @@ function buildOverall(
 
   // Every goal's numbers, flipped where that goal roots for the other side,
   // so "if they win" always means the overall pick winning.
-  const shifts: GoalShift[] = RANKABLE_GOALS.map((g) => {
-    const v = game.goals[g];
+  const shifts: GoalShift[] = goals.map((g) => {
+    const v = view(g);
     const same = (v.rootFor === homeAbbr) === rootHome;
     return {
       goal: g,
       label: GOAL_LABELS[g],
-      current: current[g],
+      current: current[g] ?? 0,
       ifRootWins: same ? v.valueIfWin : v.valueIfLose,
       ifRootLoses: same ? v.valueIfLose : v.valueIfWin,
       real: real(g),
     };
   });
 
-  const realGoals = RANKABLE_GOALS.filter(real);
+  // Only goals that count toward the score compete for "moves most", so a
+  // swing in picks is never compared with one in percentage points.
+  const realGoals = goals.filter((g) => real(g) && weight(g) > 0);
   const biggestGoal =
     realGoals.length === 0
       ? null
-      : realGoals.reduce((a, b) =>
-          game.goals[b].impact > game.goals[a].impact ? b : a,
-        );
+      : realGoals.reduce((a, b) => (view(b).impact > view(a).impact ? b : a));
 
   // The reason shown should explain the call actually made, so take it from
   // the goal pushing hardest in the chosen direction.
   const agreeing = realGoals.filter(
-    (g) => (game.goals[g].rootFor === homeAbbr) === rootHome,
+    (g) => (view(g).rootFor === homeAbbr) === rootHome,
   );
   const reasonGoal =
     agreeing.length === 0
-      ? (biggestGoal ?? "playoffs")
+      ? (biggestGoal ?? goals[0])
       : agreeing.reduce((a, b) =>
-          game.goals[b].impact * OVERALL_WEIGHTS[b] >
-          game.goals[a].impact * OVERALL_WEIGHTS[a]
-            ? b
-            : a,
+          view(b).impact * weight(b) > view(a).impact * weight(a) ? b : a,
         );
 
-  const pv = game.goals.playoffs;
+  // Every goal row carries the same win chance for its root-for team.
+  const pv = view(goals[0]);
   const rootForWinPct =
     pv.rootFor === root.abbr ? pv.rootForWinPct : 100 - pv.rootForWinPct;
 
@@ -192,7 +195,10 @@ function buildOverall(
   };
 }
 
-export async function loadPageData(teamParam: string): Promise<LoadResult> {
+export async function loadPageData(
+  teamParam: string,
+  mode: Mode = "contend",
+): Promise<LoadResult> {
   // The simulation runs three times a week, so an hour-old page is never
   // misleading. The GitHub Action also pokes a Vercel deploy hook after each
   // run, which rebuilds immediately; this is the backstop for when it doesn't.
@@ -245,7 +251,7 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     teamRecord(abbr, run.season),
     teamOdds(run.run_id, abbr),
     nicknames(),
-    weekImpacts(run.run_id, abbr, run.week),
+    weekImpacts(run.run_id, abbr, run.week, mode === "tank"),
     directory(),
   ]);
   const colours = dir.colours[abbr];
@@ -253,13 +259,15 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     dir.entries.map((e) => [e.abbr, e.conference]),
   );
 
+  const goals = MODE_GOALS[mode];
+
   // Group the flat impact rows into one entry per game, with its goals.
-  // `overall` is filled in once all three goals are present.
+  // `overall` is filled in once all of the mode's goals are present.
   const byGame = new Map<string, Omit<GameView, "overall" | "otherConference">>();
   const sides = new Map<string, { home: string; away: string }>();
   for (const row of impacts) {
     const goal = row.goal as RankableGoal;
-    if (!RANKABLE_GOALS.includes(goal)) continue;
+    if (!(goals as readonly string[]).includes(goal)) continue;
 
     let game = byGame.get(row.game_id);
     if (!game) {
@@ -270,7 +278,7 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
         kickoff: row.kickoff ?? "",
         kickoffTz: "CT",
         isOwnGame: row.away_team === abbr || row.home_team === abbr,
-        goals: {} as Record<RankableGoal, GoalView>,
+        goals: {},
       };
       byGame.set(row.game_id, game);
       sides.set(row.game_id, { home: row.home_team, away: row.away_team });
@@ -296,30 +304,51 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
       tier,
       tierLabel: TIER_LABELS[tier] ?? tier,
       reasonCode: row.reason_code,
+      // The other team the reason sentence names. In contend mode that is
+      // the rival you root AGAINST: their loss helps you. In tank mode it is
+      // the team you root FOR: a draft rival's win moves it later in the
+      // order, behind you.
       subjectNick:
         row.reason_code === "own_game" ||
-        row.reason_code === "tiebreaker_effect"
+        row.reason_code === "tiebreaker_effect" ||
+        (mode === "tank" && row.reason_code === "other")
           ? null
-          : (nicks[row.against] ?? row.against),
+          : mode === "tank"
+            ? (nicks[row.root_for] ?? row.root_for)
+            : (nicks[row.against] ?? row.against),
     };
   }
 
   const playoffPct = num(odds?.playoff_pct);
-  const current: Record<RankableGoal, number> = {
+  const nullable = (v: string | null | undefined) =>
+    v === null || v === undefined ? null : Number(v);
+  const avgDraftPick = nullable(odds?.avg_draft_pick);
+  const topPickPct = nullable(odds?.top_pick_pct);
+  const current: Partial<Record<RankableGoal, number>> = {
     playoffs: playoffPct,
     division: num(odds?.division_pct),
     top_seed: num(odds?.top_seed_pct),
+    draft: avgDraftPick ?? 0,
+    top_pick: topPickPct ?? 0,
   };
 
-  // Drop any game missing one of the three goals rather than render blanks.
+  // Drop any game missing one of the mode's goals rather than render blanks.
+  // (A run saved before tank mode has no top_pick rows, so its tank page is
+  // empty -- the page says so rather than showing a half-built list.)
   const views: GameView[] = [...byGame.values()]
-    .filter((g) => RANKABLE_GOALS.every((k) => g.goals[k] !== undefined))
+    .filter((g) => goals.every((k) => g.goals[k] !== undefined))
     .map((g) => {
       const s = sides.get(g.gameId)!;
       return {
         ...g,
-        overall: buildOverall(g, s.home, s.away, nicks, current),
+        overall: buildOverall(
+          g, s.home, s.away, nicks, current, goals,
+          mode === "tank" ? TANK_WEIGHTS : OVERALL_WEIGHTS,
+        ),
+        // The conference split only means something for the playoff goals;
+        // the draft ranks all 32 teams together.
         otherConference:
+          mode === "contend" &&
           confOf[s.home] !== team?.team_conf &&
           confOf[s.away] !== team?.team_conf,
       };
@@ -341,12 +370,18 @@ export async function loadPageData(teamParam: string): Promise<LoadResult> {
     playoffPct,
     divisionPct: num(odds?.division_pct),
     topSeedPct: num(odds?.top_seed_pct),
+    avgDraftPick,
+    topPickPct,
+    top5PickPct: nullable(odds?.top5_pick_pct),
+    mode,
+    goals,
     updatedLabel: run.updated,
     nSims: Number(run.n_sims),
     // The combined score already discounts a settled race -- a locked playoff
     // spot barely moves, so it contributes little -- which retires the old
     // "switch to division at 97%" rule.
-    defaultGoal: "overall",
+    // Tank mode has no Overall (see TANK_WEIGHTS): draft position leads.
+    defaultGoal: mode === "tank" ? "draft" : "overall",
     ownGame: views.find((g) => g.isOwnGame) ?? null,
     games: views.filter((g) => !g.isOwnGame),
     },
