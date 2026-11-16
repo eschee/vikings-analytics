@@ -26,3 +26,16 @@ export function updatedLabel(iso: string): string {
   }).format(d);
   return `${date} CT`;
 }
+
+/** A chance for a headline: whole percent, but "<1%" rather than a
+ *  misleading "0%" when it is small yet possible. */
+export function chance(value: number): string {
+  if (value > 0 && value < 1) return "<1%";
+  return `${Math.round(value)}%`;
+}
+
+/** An average pick, e.g. "#12". Whole picks in the headline: the decimal
+ *  is noise to a fan reading "where will we pick?". */
+export function pickLabel(avg: number): string {
+  return `#${Math.round(avg)}`;
+}

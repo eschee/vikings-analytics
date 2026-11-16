@@ -18,6 +18,21 @@ export function reasonSentence(
 ): string {
   const other = goal.subjectNick;
 
+  // Tank mode: the draft ranks all 32 teams together, so conference and
+  // division do not come into it -- only who finishes near you.
+  if (goal.goal === "draft" || goal.goal === "top_pick") {
+    switch (goal.reasonCode) {
+      case "own_game":
+        return `The ${teamNick} are playing. For the draft, a loss here moves you up the order more than any other result.`;
+      case "draft_rival":
+        return other
+          ? `The ${other} are close to you in the projected draft order. Every game they win pushes them behind you, which moves you up a spot.`
+          : `A team close to you in the projected draft order is playing.`;
+      default:
+        return `Neither team is close to you in the draft order. This reaches you mainly through strength of schedule — the draft's first tiebreaker — so the effect is small.`;
+    }
+  }
+
   switch (goal.reasonCode) {
     case "own_game":
       return `The ${teamNick} are playing. Nothing else on the schedule moves your odds this much.`;

@@ -148,12 +148,17 @@ export interface OddsRow {
   division_pct: string;
   top_seed_pct: string;
   avg_seed: string | null;
+  /** Tank mode; NULL for runs saved before it existed. */
+  avg_draft_pick: string | null;
+  top_pick_pct: string | null;
+  top5_pick_pct: string | null;
 }
 
 export async function teamOdds(runId: number, abbr: string) {
   const sql = client();
   const rows = (await sql`
-    SELECT playoff_pct, division_pct, top_seed_pct, avg_seed
+    SELECT playoff_pct, division_pct, top_seed_pct, avg_seed,
+           avg_draft_pick, top_pick_pct, top5_pick_pct
     FROM team_odds WHERE run_id = ${runId} AND team = ${abbr}
   `) as OddsRow[];
   return rows[0] ?? null;
@@ -176,9 +181,49 @@ export interface ImpactRow {
   kickoff: string | null;
 }
 
-/** Every impact row for one team in one week. The draft goal is excluded in
- *  SQL: it is stored, but the site never shows it. */
+/** Every impact row for one team in one week, for one mode's goals: the
+ *  three playoff goals (contend) or the two draft goals (tank).
+ *
+ *  Two complete queries rather than one with a spliced-in goal list: the
+ *  mode only chooses WHICH query runs, so no part of it ever becomes SQL
+ *  text, and each query's goal filter is a literal. */
 export async function weekImpacts(
+  runId: number,
+  abbr: string,
+  week: number,
+  tank: boolean,
+): Promise<ImpactRow[]> {
+  return tank
+    ? tankImpacts(runId, abbr, week)
+    : contendImpacts(runId, abbr, week);
+}
+
+async function tankImpacts(
+  runId: number,
+  abbr: string,
+  week: number,
+): Promise<ImpactRow[]> {
+  const sql = client();
+  return (await sql`
+    SELECT i.game_id, g.week, g.away_team, g.home_team, i.goal, i.root_for,
+           CASE WHEN i.root_for = g.home_team THEN g.away_team
+                ELSE g.home_team END AS against,
+           i.impact_pts, i.root_for_win_pct,
+           i.value_if_root_for_wins, i.value_if_root_for_loses,
+           i.tier, i.reason_code,
+           to_char(((g.gameday + g.gametime::time)
+                    AT TIME ZONE 'America/New_York')
+                    AT TIME ZONE 'America/Chicago',
+                   'Dy FMHH12:MI AM') AS kickoff
+    FROM game_impacts i
+    JOIN games g ON g.game_id = i.game_id
+    WHERE i.run_id = ${runId} AND i.team = ${abbr}
+      AND g.week = ${week} AND i.goal IN ('draft', 'top_pick')
+    ORDER BY i.impact_pts DESC
+  `) as ImpactRow[];
+}
+
+async function contendImpacts(
   runId: number,
   abbr: string,
   week: number,
@@ -200,7 +245,7 @@ export async function weekImpacts(
     FROM game_impacts i
     JOIN games g ON g.game_id = i.game_id
     WHERE i.run_id = ${runId} AND i.team = ${abbr}
-      AND g.week = ${week} AND i.goal <> 'draft'
+      AND g.week = ${week} AND i.goal IN ('playoffs', 'division', 'top_seed')
     ORDER BY i.impact_pts DESC
   `) as ImpactRow[];
 }

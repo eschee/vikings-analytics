@@ -5,19 +5,54 @@
 
 import type { TeamTheme } from "./colors";
 
-export type GoalKey = "playoffs" | "division" | "top_seed" | "draft";
+export type GoalKey =
+  | "playoffs"
+  | "division"
+  | "top_seed"
+  | "draft"
+  | "top_pick";
 
-/** The three goals the site ranks by. The draft goal is computed and stored,
- *  but deliberately not shown: it tells a fan to root against their own team,
- *  which is not what this page is for. */
-export const RANKABLE_GOALS = ["playoffs", "division", "top_seed"] as const;
+/** Every goal the site can rank by. Which ones a page shows depends on its
+ *  mode (MODE_GOALS). */
+export const RANKABLE_GOALS = [
+  "playoffs",
+  "division",
+  "top_seed",
+  "draft",
+  "top_pick",
+] as const;
 export type RankableGoal = (typeof RANKABLE_GOALS)[number];
+
+/** Contend: rooting for your team to make a run. Tank: rooting for the best
+ *  draft pick -- which means rooting AGAINST your own team. Tank mode lives
+ *  at its own address (/min/tank) so it is a deliberate choice, never what a
+ *  fan lands on by default, and can be shared. */
+export type Mode = "contend" | "tank";
+
+export const MODE_GOALS = {
+  contend: ["playoffs", "division", "top_seed"],
+  tank: ["draft", "top_pick"],
+} as const satisfies Record<Mode, readonly RankableGoal[]>;
 
 export const GOAL_LABELS: Record<RankableGoal, string> = {
   playoffs: "Playoffs",
   division: "Division",
   top_seed: "#1 seed",
+  draft: "Draft position",
+  top_pick: "#1 pick",
 };
+
+/** Draft position is an average pick number, where LOWER is better. Every
+ *  other goal is a percentage chance, where higher is better. */
+export function isPickGoal(goal: RankableGoal): boolean {
+  return goal === "draft";
+}
+
+/** The goals present on one game, in display order. A page only loads its
+ *  own mode's goals, so components ask the game rather than assume a list. */
+export function goalsOf(game: { goals: Partial<Record<RankableGoal, unknown>> }) {
+  return RANKABLE_GOALS.filter((g) => game.goals[g] !== undefined);
+}
 
 export type Tier = "must_win" | "root_hard" | "a_little" | "doesnt_matter";
 
@@ -106,17 +141,27 @@ export type Ranking = RankableGoal | "overall";
  *  so the score reads as a weighted average swing in percentage points.
  *  Playoffs leads because getting in is the season; the division adds a home
  *  game; the #1 seed adds the bye. Tune here -- nothing else hard-codes them. */
-export const OVERALL_WEIGHTS: Record<RankableGoal, number> = {
+export const OVERALL_WEIGHTS: Partial<Record<RankableGoal, number>> = {
   playoffs: 0.5,
   division: 0.3,
   top_seed: 0.2,
+};
+
+/** Tank mode's "overall" is draft position alone. It is not blended with the
+ *  #1-pick chance because the two are in different units (picks vs
+ *  percentage points); a weighted sum of them would mean nothing. Tank mode
+ *  therefore never offers an "Overall" ranking -- this only orients the
+ *  shared detail table to the side that helps your draft position. */
+export const TANK_WEIGHTS: Partial<Record<RankableGoal, number>> = {
+  draft: 1,
 };
 
 /** One goal's odds, oriented to the team the overall score says to root for. */
 export interface GoalShift {
   goal: RankableGoal;
   label: string;
-  /** The team's odds right now, before this game is played. */
+  /** The team's odds right now, before this game is played (for draft
+   *  position: the average projected pick). */
   current: number;
   /** The team's odds if the overall root-for team wins / loses. Null for
    *  runs saved before these were stored. */
@@ -150,8 +195,9 @@ export interface GameView {
   kickoff: string;
   kickoffTz: string;
   isOwnGame: boolean;
-  /** One entry per rankable goal. */
-  goals: Record<RankableGoal, GoalView>;
+  /** One entry per goal of the page's mode (MODE_GOALS). The server drops
+   *  any game missing one of them, so every goal of the mode is present. */
+  goals: Partial<Record<RankableGoal, GoalView>>;
   overall: OverallView;
   /** Neither team is in the viewer's conference: such a game can reach their
    *  odds only through tiny tiebreaker effects, and the model never ranks it
@@ -186,6 +232,13 @@ export interface PageData {
   playoffPct: number;
   divisionPct: number;
   topSeedPct: number;
+  /** Tank mode's numbers. Null for runs saved before tank mode existed. */
+  avgDraftPick: number | null;
+  topPickPct: number | null;
+  top5PickPct: number | null;
+  mode: Mode;
+  /** The goals this page ranks by, in display order. */
+  goals: readonly RankableGoal[];
   updatedLabel: string;
   /** How many seasons the latest run simulated, from sim_runs.n_sims. */
   nSims: number;

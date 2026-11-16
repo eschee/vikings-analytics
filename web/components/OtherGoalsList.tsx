@@ -3,7 +3,7 @@
 import RootForRow from "./RootForRow";
 import {
   GOAL_LABELS,
-  RANKABLE_GOALS,
+  goalsOf,
   type GameView,
   type RankableGoal,
   type Tier,
@@ -28,9 +28,18 @@ const STRENGTH: Record<Tier, string> = {
 
 /** The goal this game matters MOST for, ignoring the one being ranked by. */
 function bestOtherGoal(game: GameView, selected: RankableGoal) {
-  return RANKABLE_GOALS.filter(
-    (g) => g !== selected && game.goals[g].tier !== "doesnt_matter",
-  ).sort((a, b) => game.goals[b].impact - game.goals[a].impact)[0];
+  // Sorted by tier first, then size: in tank mode the two goals are in
+  // different units (picks vs points), so raw sizes alone cannot be compared.
+  const rank: Record<Tier, number> = {
+    must_win: 3, root_hard: 2, a_little: 1, doesnt_matter: 0,
+  };
+  return goalsOf(game)
+    .filter((g) => g !== selected && game.goals[g]!.tier !== "doesnt_matter")
+    .sort(
+      (a, b) =>
+        rank[game.goals[b]!.tier] - rank[game.goals[a]!.tier] ||
+        game.goals[b]!.impact - game.goals[a]!.impact,
+    )[0];
 }
 
 export function otherGoalLine(
@@ -39,10 +48,17 @@ export function otherGoalLine(
 ): string | null {
   const other = bestOtherGoal(game, selected);
   if (!other) return null;
-  const view = game.goals[other];
+  const view = game.goals[other]!;
   const strength = STRENGTH[view.tier];
   const goalName = GOAL_LABELS[other].toLowerCase();
-  const label = goalName === "#1 seed" ? "the #1 seed" : `the ${goalName}`;
+  const label =
+    other === "top_seed"
+      ? "the #1 seed"
+      : other === "top_pick"
+        ? "the #1 pick"
+        : other === "draft"
+          ? "your draft position"
+          : `the ${goalName}`;
   return `${strength} for ${label}: root for the ${view.rootForNick}.`;
 }
 
@@ -69,7 +85,7 @@ export default function OtherGoalsList({
   const sorted = [...games].sort((a, b) => {
     const ga = bestOtherGoal(a, selectedGoal);
     const gb = bestOtherGoal(b, selectedGoal);
-    return (gb ? b.goals[gb].impact : 0) - (ga ? a.goals[ga].impact : 0);
+    return (gb ? b.goals[gb]!.impact : 0) - (ga ? a.goals[ga]!.impact : 0);
   });
 
   return (

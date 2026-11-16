@@ -5,6 +5,7 @@
  *  highest combined Root score, excluding the team's own game (rooting for
  *  yourself goes without saying). */
 
+import { chance, pickLabel } from "./format";
 import type { PageData } from "./types";
 
 /** How many teams to name. Three fits a text message and a preview card. */
@@ -26,11 +27,40 @@ export interface ShareSummary {
 }
 
 export function shareSummary(data: PageData): ShareSummary {
+  // Contend: the Overall ranking. Tank: draft position, its default -- in
+  // tank mode `overall` is built from draft position alone (TANK_WEIGHTS).
   const rootFor = [...data.games]
     .filter((g) => g.overall.score > 0)
     .sort((a, b) => b.overall.score - a.overall.score)
     .slice(0, TOP_N)
     .map((g) => g.overall.rootForNick);
+
+  if (data.mode === "tank") {
+    const lead = `Tanking ${data.teamNick} fans, week ${data.week}:`;
+    const pick =
+      data.avgDraftPick === null
+        ? ""
+        : ` Projected pick ${pickLabel(data.avgDraftPick)}, ${chance(
+            data.topPickPct ?? 0,
+          )} chance at #1.`;
+    // The own game is listed separately, but for tanking it is THE result
+    // to root for, so name it first.
+    const own = data.ownGame?.overall;
+    const names = [
+      ...(own && own.score > 0 && own.rootFor !== data.teamAbbr
+        ? [own.rootForNick]
+        : []),
+      ...rootFor,
+    ].slice(0, TOP_N);
+    return {
+      title: `Who should tanking ${data.teamNick} fans root for? — Hatewatch`,
+      text:
+        names.length > 0
+          ? `${lead} root for the ${list(names)}.${pick}`
+          : `${lead} no game this week moves the draft order.${pick}`,
+      rootFor: names,
+    };
+  }
 
   const pct = `${Math.round(data.playoffPct)}% chance to make the playoffs.`;
   const lead = `${data.teamNick} fans, week ${data.week}:`;

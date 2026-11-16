@@ -1,30 +1,37 @@
 import GoalShifts from "./GoalShifts";
 import RootMeter from "./RootMeter";
 import TierMeter from "./TierMeter";
-import type { GameView, Ranking } from "@/lib/types";
+import type { GameView, Mode, Ranking } from "@/lib/types";
 
 /** The team's own game, pulled out of the list because it is always the
  *  biggest mover and reads better as a headline card than as row one.
  *
- *  The table is oriented to the TEAM, not to whoever the model says to root
- *  for. Those are always the same here, but tying it to the team keeps
- *  "Vikings win" literally true if that ever changes. */
+ *  In contend mode the table is oriented to the TEAM, not to whoever the
+ *  model says to root for. Those are always the same there, but tying it to
+ *  the team keeps "Vikings win" literally true if that ever changes.
+ *
+ *  Tank mode flips it: a loss is what helps the draft position, so the card
+ *  says so out loud and the table leads with the opponent winning. */
 
 export default function YourGameCard({
   game,
   teamAbbr,
   teamNick,
   ranking,
+  mode,
 }: {
   game: GameView;
   teamAbbr: string;
   teamNick: string;
   ranking: Ranking;
+  mode: Mode;
 }) {
   const isHome = game.homeNick === teamNick;
   const opponent = isHome ? game.awayNick : game.homeNick;
   const matchup = `${teamNick} ${isHome ? "vs" : "at"} ${opponent}`;
-  const goalView = ranking === "overall" ? null : game.goals[ranking];
+  const goalView = ranking === "overall" ? null : (game.goals[ranking] ?? null);
+  // Tank mode: root for whoever the draft says -- almost always the opponent.
+  const tankRoot = mode === "tank" && game.overall.rootFor !== teamAbbr;
 
   return (
     <section className="rounded-2xl border border-line bg-card p-5">
@@ -54,12 +61,19 @@ export default function YourGameCard({
         </div>
       </div>
 
+      {tankRoot ? (
+        <p className="mt-2 text-sm font-medium text-brand">
+          Tanking? Root for the {opponent} — a {teamNick} loss helps your
+          draft position more than any other result.
+        </p>
+      ) : null}
+
       <div className="mt-4">
         <GoalShifts
           game={game}
-          rootAbbr={teamAbbr}
-          rootNick={teamNick}
-          againstNick={opponent}
+          rootAbbr={tankRoot ? game.overall.rootFor : teamAbbr}
+          rootNick={tankRoot ? opponent : teamNick}
+          againstNick={tankRoot ? teamNick : opponent}
         />
       </div>
     </section>

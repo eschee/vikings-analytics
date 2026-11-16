@@ -91,8 +91,8 @@ data that neither the site nor the refresh job touches.
 | `games` | 2026 season only | fixed |
 | `teams` | 32 current + 4 legacy, `is_current` flag | fixed |
 | `sim_runs` | one row per run | kept forever |
-| `team_odds` | 32 rows per run | kept forever (~22 kB/run) |
-| `game_impacts` | ~17,300 rows per run | **pruned to newest 3 runs** (3.65 MB/run) |
+| `team_odds` | 32 rows per run, incl. tank numbers (avg pick, #1 pick %, top-5 %) | kept forever (~22 kB/run) |
+| `game_impacts` | ~21,800 rows per run (5 goals) | **pruned to newest 3 runs** (~4.6 MB/run) |
 
 ### Secrets — names and locations only
 
@@ -148,6 +148,7 @@ PRs #1–#16 are merged. Each was security-reviewed before merge.
 | **#15** | A pick-your-team start screen at `/`, and a share button that copies on laptops (Chrome on macOS left `navigator.share` hanging). |
 | **#16** | Per-game significance tiers, 200k sims, other-conference games never ranked, and "Too close to call" / "Can't really affect you" groups. |
 | **#17** | Paired replays for the current week's games (each replayed both ways in the same 40k seasons), and a 0.1-point minimum. |
+| **#18** | Tank mode: a Contend / Tank switch on every team page (`/min/tank`), ranking games by draft position and #1-pick chance. NFL draft order in the simulation (non-playoff teams first, strength-of-schedule tiebreak). Migration 006. Model v5.3. |
 
 ### Key results
 
@@ -251,8 +252,8 @@ games reach you through interconference games, the floor jumped from 1.1 to
 5–7) were labelled "doesn't matter". Games between two other-conference teams
 are never ranked at all: their only channel is tiny tiebreakers, so any
 measured swing is noise. 200,000 sims (was 100k) shrink the error so smaller
-real effects show; about two minutes per run. The draft goal keeps the old
-control-group floor.
+real effects show; about two minutes per run. The tank goals use the same
+per-game test, with no conference split (the draft ranks all 32 teams).
 
 **This week's games are measured by paired replays.** In the first 40,000
 simulated seasons (`PAIRED_SIMS`), each current-week game is flipped and that
@@ -264,6 +265,23 @@ conferences are re-seeded. Adds ~4 minutes per run. Week-10 check for MIN:
 conditioning said LA @ ARI moved the division 0.82 points; paired showed
 −0.01 — the conditioning figure was noise. Future weeks still use
 conditioning (below), but the site only shows the current week.
+
+**Tank mode is a separate page, not a fourth goal in the Overall score.**
+It tells a fan to root against their own team, so it lives at its own
+address (`/min/tank`), reached only by the switch — never a default. Two
+goals: draft position (average pick; cutoffs 1.0 / 0.2 picks, set from the
+week-10 dry run: own games 1.7–3.6 picks, other games ≤ 0.34, 95% under
+0.19) and #1 pick (percentage points, the playoff cutoffs). No combined tank
+score — picks and percentage points do not add. The draft order follows the
+NFL: non-playoff teams first, then wins, then strength of schedule (weaker
+picks first), then random; playoff teams by record (the NFL uses elimination
+round; playoffs are not simulated). On real 2023–2025 final standings the
+rule matched every 2024 and 2025 draft slot except known trades (CAR→CHI #1,
+MIN–NYJ and MIN–JAX in 2024; CLE–JAX #2/#5 in 2025); 2026 also fits once
+trades are allowed for (ATL→LA, IND→NYJ, DAL's pick, and apparently KC–CLE
+and CIN–NYG). Paired replays carry the draft too (+8 s per run).
+Migration 006 widens two allowlists, so 004 now carries `draft_rival` as
+well — every file re-runs on each local load, and 004 runs first.
 
 **Impacts by conditioning, not re-simulation.** Each game's winner already
 varies across iterations, so one run answers all 135 games at once. Verified
@@ -320,9 +338,10 @@ Kalshi API calls. Polymarket's terms are ambiguous and its #1 seed markets
 are near-empty. The Odds API allows display but has no playoff or division
 futures. No 2022–2024 futures history exists in any usable source.
 
-**No draft goal on the site.** It is computed and stored, and deliberately
-hidden: it tells a fan to root against their own team. Available in the
-terminal via `python analysis/guide.py --goal draft`.
+**Tank mode's draft order is approximate past pick 18.** Playoff teams are
+ordered by record, not by playoff round, and the NFL's division/conference
+draft tiebreakers after strength of schedule are not implemented (coin flip
+instead). Runs saved before v5.3 have no tank numbers; the tank page says so.
 
 **`.env` has a sub-millisecond TOCTOU window.** `write_env` truncates, writes,
 then `chmod`s to `0600`. Between those the file is world-readable. Before PR
@@ -334,8 +353,6 @@ regression. Closing it entirely means writing a sibling temp file opened
 ladder. Touchdown counts are not in `games`, and simulated seasons have no
 scores. It was never reached in the 8/8 validation.
 
-**Draft-order ties break randomly.** The NFL's draft procedure is a separate
-ladder and is not implemented.
 
 **Simulated games never tie.** Real ties already played count as half a win.
 

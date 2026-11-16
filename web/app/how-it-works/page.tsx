@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import BackLink from "@/components/BackLink";
-import { GOAL_LABELS, OVERALL_WEIGHTS, RANKABLE_GOALS } from "@/lib/types";
+import { GOAL_LABELS, MODE_GOALS, OVERALL_WEIGHTS } from "@/lib/types";
 
 /** How the numbers are made, and how far to trust them.
  *
@@ -22,8 +22,9 @@ export const metadata: Metadata = {
     "Where Hatewatch's playoff odds come from, what the Root score means, and how accurate the model has been.",
 };
 
-const WEIGHTS_TEXT = RANKABLE_GOALS.map(
-  (g) => `${GOAL_LABELS[g].toLowerCase()} ${Math.round(OVERALL_WEIGHTS[g] * 100)}%`,
+const WEIGHTS_TEXT = MODE_GOALS.contend.map(
+  (g) =>
+    `${GOAL_LABELS[g].toLowerCase()} ${Math.round((OVERALL_WEIGHTS[g] ?? 0) * 100)}%`,
 ).join(", ");
 
 /** Model v5 replayed on 2023-2025 (weeks 6, 10, 14): playoff forecasts
@@ -142,6 +143,46 @@ export default function HowThisWorks() {
                 conference; they reach you only through tiny tiebreakers.
               </li>
             </ul>
+          </div>
+        </Section>
+
+        <Section title="Tank mode">
+          <p>
+            Every team page has a{" "}
+            <span className="font-semibold text-brand">Contend / Tank</span>{" "}
+            switch. Tank mode asks a different question: which results move
+            your team up the draft order? Usually that means rooting against
+            your own team, and for the teams just below you in the standings.
+          </p>
+          <p>
+            The draft order in each simulated season follows the NFL&apos;s
+            rules: teams that miss the playoffs pick first, worst record first,
+            and ties go to the team with the weaker schedule (its
+            opponents&apos; combined record), then a coin flip. Replayed on
+            the final standings of 2023, 2024 and 2025, that rule put every
+            team in its real draft slot for 2024 and 2025 — every remaining
+            difference was a traded pick. Playoff teams always pick 19th or
+            later; we don&apos;t simulate the playoffs, so among them we order
+            by record, where the NFL uses the round they were knocked out in.
+          </p>
+          <div>
+            <p className="font-semibold text-brand">Two rankings:</p>
+            <ul className="mt-1 space-y-1">
+              <li>
+                Draft position — your average pick across the simulated
+                seasons. Must win: moves it by a full pick or more (in
+                practice, only your own game). Root hard: 0.2 picks or more.
+              </li>
+              <li>
+                #1 pick — your chance at the first overall pick, with the same
+                cutoffs as the playoff goals (10 and 2 points).
+              </li>
+            </ul>
+            <p className="mt-2">
+              There is no combined tank score: one is measured in picks and
+              the other in percentage points, so adding them would mean
+              nothing.
+            </p>
           </div>
         </Section>
 
