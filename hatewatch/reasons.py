@@ -142,7 +142,8 @@ def draft_reason_code(
     1. own_game -- the subject is playing (to tank, they want to lose).
     2. draft_rival -- a participant's average projected pick is within
        DRAFT_RIVAL_PICKS of the subject's, so either could finish ahead of
-       the other; their loss is a "win" for the subject.
+       the other. Their WIN helps the subject: it moves them later in the
+       order, behind the subject.
     3. other -- everything else: these reach the subject mostly through the
        strength-of-schedule tiebreaker, or through a team far away in the
        order, so the effect is small.

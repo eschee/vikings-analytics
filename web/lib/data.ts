@@ -304,14 +304,18 @@ export async function loadPageData(
       tier,
       tierLabel: TIER_LABELS[tier] ?? tier,
       reasonCode: row.reason_code,
-      // The other team the reason sentence names. For draft_rival that is
-      // whichever side is near you in the order: the team to root against.
+      // The other team the reason sentence names. In contend mode that is
+      // the rival you root AGAINST: their loss helps you. In tank mode it is
+      // the team you root FOR: a draft rival's win moves it later in the
+      // order, behind you.
       subjectNick:
         row.reason_code === "own_game" ||
         row.reason_code === "tiebreaker_effect" ||
         (mode === "tank" && row.reason_code === "other")
           ? null
-          : (nicks[row.against] ?? row.against),
+          : mode === "tank"
+            ? (nicks[row.root_for] ?? row.root_for)
+            : (nicks[row.against] ?? row.against),
     };
   }
 
