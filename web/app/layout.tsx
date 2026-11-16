@@ -19,7 +19,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Hatewatch — who to root for",
+  title: "WhoToRoot — which NFL games to root for",
   description:
     "Which other NFL results help your team most, ranked by how much they move the odds.",
 };

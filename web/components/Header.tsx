@@ -45,9 +45,9 @@ export default function Header({ data }: { data: PageData }) {
           {/* The wordmark goes home, to the team-picking start screen. */}
           <Link
             href="/"
-            className="font-display text-xl font-bold tracking-[0.14em]"
+            className="font-display text-xl font-bold tracking-tight"
           >
-            HATEWATCH
+            WhoToRoot
             <span className="sr-only"> — choose a different team</span>
           </Link>
           <TeamPicker

@@ -9,7 +9,7 @@ import { shareImage } from "@/lib/shareImage";
  *  with tank mode's card.
  */
 
-export const alt = "Who to root for this week — Hatewatch";
+export const alt = "Who to root for this week — WhoToRoot";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 

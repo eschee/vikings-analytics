@@ -53,7 +53,7 @@ export function shareSummary(data: PageData): ShareSummary {
       ...rootFor,
     ].slice(0, TOP_N);
     return {
-      title: `Who should tanking ${data.teamNick} fans root for? — Hatewatch`,
+      title: `Who should tanking ${data.teamNick} fans root for? — WhoToRoot`,
       text:
         names.length > 0
           ? `${lead} root for the ${list(names)}.${pick}`
@@ -70,7 +70,7 @@ export function shareSummary(data: PageData): ShareSummary {
       : `${lead} no other game this week moves the needle. ${pct}`;
 
   return {
-    title: `Who should ${data.teamNick} fans root for? — Hatewatch`,
+    title: `Who should ${data.teamNick} fans root for? — WhoToRoot`,
     text,
     rootFor,
   };

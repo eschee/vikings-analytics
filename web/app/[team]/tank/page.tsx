@@ -15,7 +15,7 @@ export async function generateMetadata({
   if (!found) return {};
   const nick = found.nick;
   return {
-    title: `${nick} tank mode — Hatewatch`,
+    title: `${nick} tank mode — WhoToRoot`,
     description: `Tanking? Which NFL results move the ${nick} up the draft order, and their chance at the #1 pick.`,
   };
 }

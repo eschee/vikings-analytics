@@ -17,7 +17,7 @@ export async function generateMetadata({
   if (!found) return {};
   const nick = found.nick;
   return {
-    title: `${nick} — Hatewatch`,
+    title: `${nick} — WhoToRoot`,
     description: `Which other NFL results help the ${nick} most, ranked by how much they move their playoff, division and #1 seed odds.`,
   };
 }
