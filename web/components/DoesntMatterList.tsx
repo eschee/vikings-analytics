@@ -8,8 +8,8 @@ import type { GameView } from "@/lib/types";
  *  collapsed by default.
  *
  *  "Too close to call": at least one team is in your conference, so the game
- *  CAN move your odds -- but this week the effect is smaller than 200,000
- *  simulated seasons can measure, so even its direction is uncertain. Naming a
+ *  CAN move your odds -- but this week the effect is under 0.1 points or
+ *  too small to measure, so even its direction is uncertain. Naming a
  *  side here would be a guess dressed up as advice.
  *
  *  "Can't really affect you": both teams are in the other conference. They
@@ -88,7 +88,7 @@ export default function DoesntMatterList({
       <Group
         id="too-close"
         title="Too close to call"
-        note="These can nudge your odds, but by less than the simulation can measure this week — so we can't honestly say which side to root for."
+        note="These involve your conference but move your odds by less than a tenth of a point, or by less than we can measure — so we won't guess a side."
         games={close}
       />
       <Group

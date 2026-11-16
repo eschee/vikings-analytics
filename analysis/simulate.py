@@ -148,6 +148,23 @@ GOALS = {
 
 
 @dataclass
+class PairedImpact:
+    """One game replayed both ways inside the same simulated seasons.
+
+    Arrays are (3, n_teams): rows are playoffs, division, #1 seed, as the
+    share of seasons (0-1) in which each team reached that goal.
+    """
+    n: int                    # seasons replayed
+    home_mean: np.ndarray     # with the home team forced to win
+    away_mean: np.ndarray     # with the away team forced to win
+    diff_mean: np.ndarray     # mean of per-season (home - away)
+    diff_se: np.ndarray       # standard error of diff_mean
+
+
+PAIRED_GOAL_ROW = {"playoffs": 0, "division": 1, "top_seed": 2}
+
+
+@dataclass
 class SimResult:
     season: int
     n_sims: int
@@ -169,6 +186,8 @@ class SimResult:
     team_won_top_seed: np.ndarray | None = None
     team_seed: np.ndarray | None = None       # 1-7, or 0 when out
     team_draft_pick: np.ndarray | None = None  # (n_sims, 32), 1 = first overall
+    # game_id -> PairedImpact, for the games named by `paired_week`.
+    paired: dict | None = None
     real_tiebreakers: bool = True
     coin_tosses: int = 0           # iterations where the ladder ran out
     tiebreaks_resolved: int = 0    # tied groups the ladder had to separate
@@ -230,6 +249,8 @@ def simulate(
     as_of_week: int | None = None,
     half_life: float | None = None,
     rating_scale: float | None = None,
+    paired_week: int | None = None,
+    paired_sims: int = 40_000,
 ) -> SimResult:
     """Simulate the rest of a season.
 
@@ -251,6 +272,18 @@ def simulate(
     multiplies the predicted spread of every ratings-priced game (weeks with
     no betting line yet); below 1 it pulls those games toward a coin flip.
     Left as None, each takes its production value.
+
+    PAIRED REPLAYS. `paired_week` names a week (production: the current one)
+    whose games are also measured by replaying: in the first `paired_sims`
+    seasons, each such game's result is flipped and that season re-seeded, so
+    every game is seen both ways in otherwise identical seasons. The
+    difference is what that game alone does. Because nearly every season comes
+    out the same both ways, this is far more precise than comparing different
+    seasons (conditioning), and it gives even small effects a reliable
+    direction. Results land in SimResult.paired. Only the conferences of the
+    game's two teams are re-seeded; the other conference cannot be ranked for
+    that game anyway (hatewatch.impacts._other_conference). Requires the real
+    tiebreakers.
     """
     teams = load_teams(conn)
     if target not in teams:
@@ -383,6 +416,7 @@ def simulate(
     won_top_seed = np.zeros(n_sims, dtype=bool)
     coin_tosses = 0
     tiebreaks_resolved = 0
+    paired = None
     team_made = None
     team_div = None
     team_top = None
@@ -405,7 +439,31 @@ def simulate(
         fixed = played_results + played_ties
         rem_home = [g.home for g in remaining]
         rem_away = [g.away for g in remaining]
-        py_rng = random.Random(seed)
+
+        # One random stream per (season, conference) for tiebreak coin tosses,
+        # rather than one stream for the whole run. A paired replay re-seeds a
+        # season with the same stream, so a coin toss that the flipped game
+        # did not touch lands the same way both times instead of adding noise.
+        def conf_rng(s_i: int, c: str) -> random.Random:
+            return random.Random((seed * 1_000_003 + s_i) * 2 + (c == "NFC"))
+
+        conf_cols = {
+            c: np.array(
+                [idx[a] for a, t in teams.items() if t.conf == c], dtype=np.int32
+            )
+            for c in ("AFC", "NFC")
+        }
+        pair_cols = (
+            [j for j, g in enumerate(remaining) if g.week == paired_week]
+            if paired_week is not None
+            else []
+        )
+        n_pair = min(n_sims, paired_sims) if pair_cols else 0
+        # Per paired game: sums of home-forced outcome, away-forced outcome,
+        # their difference, and the difference squared -- (3, n_teams) each.
+        pair_acc = {
+            j: [np.zeros((3, n_teams)) for _ in range(4)] for j in pair_cols
+        }
 
         # Both conferences, so a single run produces all 32 teams' numbers.
         team_made = np.zeros((n_sims, n_teams), dtype=bool)
@@ -421,7 +479,7 @@ def simulate(
             ]
             ctx = SeasonContext(fixed + sim_results, teams)
             for c in ("AFC", "NFC"):
-                seeding = seed_conference(ctx, teams, c, py_rng)
+                seeding = seed_conference(ctx, teams, c, conf_rng(s_i, c))
                 for pos, abbr in enumerate(seeding.seeds, start=1):
                     col = idx[abbr]
                     team_made[s_i, col] = True
@@ -433,6 +491,47 @@ def simulate(
                     tiebreaks_resolved += 1
                     if d.step == "coin toss":
                         coin_tosses += 1
+
+            if s_i >= n_pair:
+                continue
+            # Paired replays: this season again with one game flipped.
+            real_out = np.stack(
+                [team_made[s_i], team_div[s_i], team_top[s_i]]
+            ).astype(np.int8)
+            for j in pair_cols:
+                flipped = list(sim_results)
+                flipped[j] = Result(rem_home[j], rem_away[j], home_won=not hw[j])
+                ctx2 = SeasonContext(fixed + flipped, teams)
+                alt = real_out.copy()
+                for c in {teams[rem_home[j]].conf, teams[rem_away[j]].conf}:
+                    alt[:, conf_cols[c]] = 0
+                    seeding = seed_conference(ctx2, teams, c, conf_rng(s_i, c))
+                    for abbr in seeding.seeds:
+                        alt[0, idx[abbr]] = 1
+                    for abbr in seeding.division_winners:
+                        alt[1, idx[abbr]] = 1
+                    alt[2, idx[seeding.seeds[0]]] = 1
+                home_out, away_out = (real_out, alt) if hw[j] else (alt, real_out)
+                d = home_out - away_out
+                acc = pair_acc[j]
+                acc[0] += home_out
+                acc[1] += away_out
+                acc[2] += d
+                acc[3] += d * d
+
+        if n_pair:
+            paired = {}
+            for j in pair_cols:
+                h_sum, a_sum, d_sum, d_sq = pair_acc[j]
+                mean = d_sum / n_pair
+                var = np.maximum(d_sq - n_pair * mean**2, 0.0) / max(n_pair - 1, 1)
+                paired[remaining[j].game_id] = PairedImpact(
+                    n=n_pair,
+                    home_mean=h_sum / n_pair,
+                    away_mean=a_sum / n_pair,
+                    diff_mean=mean,
+                    diff_se=np.sqrt(var / n_pair),
+                )
 
         made_playoffs = team_made[:, target_i].copy()
         won_division = team_div[:, target_i].copy()
@@ -494,6 +593,7 @@ def simulate(
         team_won_top_seed=team_top,
         team_seed=team_seed_arr,
         team_draft_pick=all_draft_picks if team_made is not None else None,
+        paired=paired,
     )
     return result
 
