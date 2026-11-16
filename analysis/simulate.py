@@ -59,13 +59,13 @@ OTHER SIMPLIFICATIONS (deliberate for v1):
     first six cannot separate the teams. Scores are stripped from the ALREADY
     PLAYED games too, so those rungs are uniformly unavailable rather than
     being decided on a half-season of points.
-  * Draft order still breaks ties at random. The NFL uses its own draft
-    procedure there (strength of schedule, then division/conference
-    tiebreakers, then a coin toss), which is a different ladder from playoff
-    seeding and is not implemented.
-  * Draft order is by record only: pick 1 to the worst record. The real order
-    sends playoff teams to picks 19-32 ordered by elimination round, which this
-    ignores.
+  * Draft order (draft_order): non-playoff teams pick first, worst record
+    first, ties broken by strength of schedule -- the weaker schedule picks
+    earlier, as in the NFL -- then at random. The NFL's further rungs
+    (division and conference tiebreakers) are not implemented; they decide
+    few ties once strength of schedule has been applied. Playoff teams take
+    picks 19-32 by record, whereas the NFL orders them by the round they were
+    knocked out in -- the playoffs themselves are not simulated.
   * Only the target's conference is seeded. Under win-percentage tiebreakers a
     game between two teams of the other conference cannot affect MIN;
     interconference games can and are simulated.
@@ -144,6 +144,7 @@ GOALS = {
     "division": ("won_division", True),
     "top_seed": ("won_top_seed", True),
     "draft": ("draft_pick", False),   # pick 1 is the best outcome
+    "top_pick": ("top_pick", True),   # holds the #1 overall pick
 }
 
 
@@ -151,8 +152,9 @@ GOALS = {
 class PairedImpact:
     """One game replayed both ways inside the same simulated seasons.
 
-    Arrays are (3, n_teams): rows are playoffs, division, #1 seed, as the
-    share of seasons (0-1) in which each team reached that goal.
+    Arrays are (5, n_teams), one row per goal (see PAIRED_GOAL_ROW): for
+    playoffs, division, #1 seed and #1 pick, the share of seasons (0-1) in
+    which each team reached it; for the draft, the average pick number.
     """
     n: int                    # seasons replayed
     home_mean: np.ndarray     # with the home team forced to win
@@ -161,7 +163,39 @@ class PairedImpact:
     diff_se: np.ndarray       # standard error of diff_mean
 
 
-PAIRED_GOAL_ROW = {"playoffs": 0, "division": 1, "top_seed": 2}
+PAIRED_GOAL_ROW = {"playoffs": 0, "division": 1, "top_seed": 2,
+                   "top_pick": 3, "draft": 4}
+
+
+def draft_order(
+    wins: np.ndarray,
+    made_playoffs: np.ndarray,
+    opponents: np.ndarray,
+    tie_noise: np.ndarray,
+) -> np.ndarray:
+    """Every team's draft pick (1 = first overall) in every simulated season.
+
+    `wins` and `made_playoffs` are (n_seasons, n_teams); `opponents` is the
+    (n_teams, n_teams) count of games each pair plays all season; `tie_noise`
+    is (n_seasons, n_teams) uniform noise for the last-resort random rung.
+
+    The order, earliest pick first:
+      1. Teams that missed the playoffs before teams that made them.
+      2. Fewer wins (a tie counts half).
+      3. Weaker strength of schedule: the combined record of all 17
+         opponents. This is the NFL's first draft tiebreaker, and at the top
+         of the draft -- where two 3-14 teams are common -- it often decides
+         the #1 pick.
+      4. Random.
+
+    np.lexsort sorts by the LAST key first, so the keys are listed from the
+    least to the most important. Sorting each season's row gives the teams in
+    pick order; argsort of that turns it into each team's pick number.
+    """
+    # Opponents' combined wins over their combined games (17 each).
+    sos = (wins @ opponents.T) / (opponents.sum(axis=1) * GAMES_PER_SEASON)
+    order = np.lexsort((tie_noise, sos, wins, made_playoffs), axis=-1)
+    return (np.argsort(order, axis=-1) + 1).astype(np.int16)
 
 
 @dataclass
@@ -205,6 +239,11 @@ class SimResult:
         return float(self.won_top_seed.mean())
 
     @property
+    def top_pick(self) -> np.ndarray:
+        """(n_sims,) bool: the target holds the #1 overall pick."""
+        return self.draft_pick == 1
+
+    @property
     def mean_draft_pick(self) -> float:
         return float(self.draft_pick.mean())
 
@@ -224,6 +263,8 @@ class SimResult:
         col = self.team_index[team]
         if goal == "draft":
             return self.team_draft_pick[:, col].astype(np.float64)
+        if goal == "top_pick":
+            return self.team_draft_pick[:, col] == 1
         matrix = {
             "playoffs": self.team_made_playoffs,
             "division": self.team_won_division,
@@ -326,10 +367,15 @@ def simulate(
     )
 
     scheduled = np.zeros(n_teams, dtype=np.int32)
+    # How many times each pair of teams meets this season (division rivals
+    # twice), for the draft's strength-of-schedule tiebreaker.
+    opponents = np.zeros((n_teams, n_teams), dtype=np.float64)
     for g in all_games:
         if g.home in idx and g.away in idx:
             scheduled[idx[g.home]] += 1
             scheduled[idx[g.away]] += 1
+            opponents[idx[g.home], idx[g.away]] += 1
+            opponents[idx[g.away], idx[g.home]] += 1
     if not np.all(scheduled == GAMES_PER_SEASON):
         odd = {
             abbrs[i]: int(scheduled[i])
@@ -402,14 +448,12 @@ def simulate(
     conf = teams[target].conf
     target_i = idx[target]
 
-    # Draft order: pick 1 to the worst record. Ties broken at random via tiny
-    # noise, which is NOT the NFL's draft procedure -- see the docstring.
-    score = wins + rng.random((n_sims, n_teams)) * TIEBREAK_NOISE
-    # Rank every team at once: a team's slot is one more than the number of
-    # teams finishing below it.
-    order = np.argsort(np.argsort(score, axis=1), axis=1)
-    all_draft_picks = (order + 1).astype(np.int16)
-    draft_pick = all_draft_picks[:, target_i]
+    # Random tiebreak noise: the simple-tiebreaker path below ranks on
+    # `score`, and draft_order uses the same noise as its last rung. Drawn
+    # here, in the same place in the random stream as before, so adding the
+    # draft's strength-of-schedule rung changes no other result.
+    tie_noise = rng.random((n_sims, n_teams))
+    score = wins + tie_noise * TIEBREAK_NOISE
 
     won_division = np.zeros(n_sims, dtype=bool)
     made_playoffs = np.zeros(n_sims, dtype=bool)
@@ -460,9 +504,10 @@ def simulate(
         )
         n_pair = min(n_sims, paired_sims) if pair_cols else 0
         # Per paired game: sums of home-forced outcome, away-forced outcome,
-        # their difference, and the difference squared -- (3, n_teams) each.
+        # their difference, and the difference squared -- (5, n_teams) each,
+        # rows as in PAIRED_GOAL_ROW.
         pair_acc = {
-            j: [np.zeros((3, n_teams)) for _ in range(4)] for j in pair_cols
+            j: [np.zeros((5, n_teams)) for _ in range(4)] for j in pair_cols
         }
 
         # Both conferences, so a single run produces all 32 teams' numbers.
@@ -495,22 +540,42 @@ def simulate(
             if s_i >= n_pair:
                 continue
             # Paired replays: this season again with one game flipped.
+            pick = draft_order(
+                wins[s_i : s_i + 1], team_made[s_i : s_i + 1], opponents,
+                tie_noise[s_i : s_i + 1],
+            )[0]
             real_out = np.stack(
-                [team_made[s_i], team_div[s_i], team_top[s_i]]
-            ).astype(np.int8)
+                [team_made[s_i], team_div[s_i], team_top[s_i], pick == 1, pick]
+            ).astype(np.float64)
             for j in pair_cols:
                 flipped = list(sim_results)
                 flipped[j] = Result(rem_home[j], rem_away[j], home_won=not hw[j])
                 ctx2 = SeasonContext(fixed + flipped, teams)
                 alt = real_out.copy()
                 for c in {teams[rem_home[j]].conf, teams[rem_away[j]].conf}:
-                    alt[:, conf_cols[c]] = 0
+                    alt[:3, conf_cols[c]] = 0
                     seeding = seed_conference(ctx2, teams, c, conf_rng(s_i, c))
                     for abbr in seeding.seeds:
                         alt[0, idx[abbr]] = 1
                     for abbr in seeding.division_winners:
                         alt[1, idx[abbr]] = 1
                     alt[2, idx[seeding.seeds[0]]] = 1
+                # The draft: move the flipped game's win to the other team and
+                # re-order with the replayed playoff field. Same tie noise, so
+                # only what the game changed can move a pick.
+                alt_wins = wins[s_i].copy()
+                winner, loser = (
+                    (home_idx[j], away_idx[j]) if hw[j]
+                    else (away_idx[j], home_idx[j])
+                )
+                alt_wins[winner] -= 1.0
+                alt_wins[loser] += 1.0
+                alt_pick = draft_order(
+                    alt_wins[None, :], alt[0:1].astype(bool), opponents,
+                    tie_noise[s_i : s_i + 1],
+                )[0]
+                alt[3] = alt_pick == 1
+                alt[4] = alt_pick
                 home_out, away_out = (real_out, alt) if hw[j] else (alt, real_out)
                 d = home_out - away_out
                 acc = pair_acc[j]
@@ -570,6 +635,18 @@ def simulate(
         winner_score = np.where(conf_is_winner, conf_score, -np.inf)
         top_team = conf_cols[np.argmax(winner_score, axis=1)]
         won_top_seed = top_team == target_i
+
+    # --- draft order ----------------------------------------------------------
+    # After seeding, because playoff teams pick last. The simple-tiebreaker
+    # path only seeds one conference, so there it falls back to record alone.
+    all_draft_picks = draft_order(
+        wins,
+        team_made if team_made is not None
+        else np.zeros((n_sims, n_teams), dtype=bool),
+        opponents,
+        tie_noise,
+    )
+    draft_pick = all_draft_picks[:, target_i]
 
     result = SimResult(
         season=season,
