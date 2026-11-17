@@ -69,18 +69,25 @@ def main() -> int:
     print(f"=== hatewatch run: {season}, {args.sims:,} sims ===")
     print(f"  model version: {config.MODEL_VERSION}\n")
 
-    # Connect separately so a failure can be reported without the driver's
-    # message, which embeds the host and username.
-    try:
-        conn = connect()
-    except psycopg.Error:
-        raise SystemExit(
-            "could not connect to the database. Details withheld on purpose: "
-            "the driver's error names the host and user, and this runs in a "
-            "public repository. Check DATABASE_URL."
-        )
+    def open_db() -> psycopg.Connection:
+        # Connect separately so a failure can be reported without the
+        # driver's message, which embeds the host and username.
+        try:
+            return connect()
+        except psycopg.Error:
+            raise SystemExit(
+                "could not connect to the database. Details withheld on "
+                "purpose: the driver's error names the host and user, and "
+                "this runs in a public repository. Check DATABASE_URL."
+            )
 
-    with conn:
+    # Two connections, not one. The simulation computes for 5-15 minutes
+    # after its initial reads, and Neon ends any connection left idle INSIDE
+    # a transaction for 5 minutes (idle_in_transaction_session_timeout) --
+    # which is how the 2026-11-17 refresh died at the save, after a full
+    # simulation. So the first connection reads and is done before the long
+    # compute, and the save opens a fresh one that has never sat idle.
+    with open_db() as conn:
         # --- 1. refresh -----------------------------------------------------
         if args.skip_schema:
             print("  schema untouched (--skip-schema)")
@@ -109,6 +116,12 @@ def main() -> int:
         print(f"  {len(games) - len(remaining)} played, {len(remaining)} remaining; "
               f"current week {week}")
 
+        # End the transaction the loads above opened, and let simulate's own
+        # reads (all at its start) run in autocommit, so no transaction sits
+        # open while it computes.
+        conn.commit()
+        conn.autocommit = True
+
         # --- 2. simulate ----------------------------------------------------
         print(f"\n  simulating {args.sims:,} seasons...")
         res = simulate(
@@ -133,6 +146,7 @@ def main() -> int:
         odds, rows = build_rows(res, teams)
         print(f"  {len(odds)} team rows, {len(rows):,} impact rows")
 
+    with open_db() as conn:
         # --- 4. save --------------------------------------------------------
         run_id = insert_run(
             conn,
