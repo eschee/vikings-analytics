@@ -49,9 +49,11 @@ Next.js 16 on Vercel         App Router, TypeScript, Tailwind v4
 ```
 
 **Refresh schedule.** `.github/workflows/refresh.yml` runs
-`python -m hatewatch.run --skip-schema` on Mon, Tue and Fri at 14:00 UTC — the
-morning after Thursday, Sunday and Monday football. On success it calls a
-Vercel deploy hook so the site rebuilds immediately. About 2m 40s per run.
+`python -m hatewatch.run --skip-schema` on Mon, Tue and Fri at 14:23 UTC — the
+morning after Thursday, Sunday and Monday football — plus Tue 07:23 and 10:23
+UTC, so the site moves to the next week soon after Monday Night Football. On
+success it calls a Vercel deploy hook so the site rebuilds immediately. About
+5 minutes per run.
 
 ### Code layout
 
@@ -374,7 +376,12 @@ contracts live in the local database.
 succeeded — including the first retention prune on Neon (17,280 rows) and the
 Vercel rebuild — but GitHub started it at 20:48 UTC, nearly seven hours after
 its 14:00 slot. GitHub does not guarantee start times; if timing matters,
-schedule earlier or dispatch manually.
+schedule earlier or dispatch manually. The next two were 9 hours late (Mon
+2026-11-16) and not started after 5+ hours (Tue 2026-11-17), so the schedule
+moved to minute :23 (off the busy top of the hour) with two extra Tuesday
+runs (PR #20). If that still proves unreliable, the next step is an outside
+timer (e.g. a Vercel cron) that calls workflow_dispatch, which starts at once
+-- at the cost of a GitHub token stored in Vercel.
 
 ---
 
