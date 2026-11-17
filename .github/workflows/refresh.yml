@@ -3,10 +3,19 @@ name: Refresh hatewatch data
 # Runs the simulation against Neon and saves a new run.
 #
 # SCHEDULE. NFL games land on Thursday, Sunday and Monday, so the refresh runs
-# the morning after each: Friday, Monday and Tuesday. Cron has no notion of
-# daylight saving, so 14:00 UTC is 8am Central in winter and 9am in summer.
-# That drift is harmless here -- the point is "the morning after", not a
-# precise hour.
+# the morning after each: Friday, Monday and Tuesday. Tuesday also gets two
+# early runs, so the site moves on to next week's games soon after Monday
+# Night Football ends (around 10:30-11:30pm Central, 04:30-05:30 UTC).
+#
+# GitHub's scheduled runs are best effort: in Nov 2026 they started 7 to 9
+# hours late, and GitHub may drop them outright under load. So:
+#   * minute 23, not 00 -- the top of the hour is when GitHub is busiest
+#   * several Tuesday runs -- if one is late or dropped, the next catches up.
+#     A run that finds nothing new just saves the same numbers again.
+#
+# Cron has no notion of daylight saving: the times below are Central in
+# winter (UTC-6); in summer each is an hour later locally. Harmless here --
+# the point is "after the games", not a precise hour.
 #
 # THIS REPOSITORY IS PUBLIC, so every line of this log is world-readable.
 # Nothing below echoes a secret or anything derived from one. In particular:
@@ -19,8 +28,10 @@ name: Refresh hatewatch data
 
 on:
   schedule:
-    # Mon, Tue and Fri at 14:00 UTC.
-    - cron: "0 14 * * 1,2,5"
+    # Tue 07:23 and 10:23 UTC (1:23am and 4:23am Central): after MNF.
+    - cron: "23 7,10 * * 2"
+    # Mon, Tue and Fri 14:23 UTC (8:23am Central): the morning after.
+    - cron: "23 14 * * 1,2,5"
   workflow_dispatch:
 
 # Read-only token. This job needs nothing from the GitHub API; it only reads
