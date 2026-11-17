@@ -49,10 +49,9 @@ export async function shareImage(team: string, mode: Mode) {
             color: HOUSE.fg,
             fontSize: 72,
             fontWeight: 700,
-            letterSpacing: 8,
           }}
         >
-          HATEWATCH
+          WhoToRoot
         </div>
       ),
       size,
@@ -78,7 +77,7 @@ export async function shareImage(team: string, mode: Mode) {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 30 }}>
-          <span style={{ fontWeight: 700, letterSpacing: 6 }}>HATEWATCH</span>
+          <span style={{ fontWeight: 700 }}>WhoToRoot</span>
           <span style={{ color: t.muted }}>
             {`${data.teamNick} ${data.recordText} · Week ${data.week}`}
           </span>

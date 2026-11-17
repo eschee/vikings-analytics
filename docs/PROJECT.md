@@ -1,4 +1,4 @@
-# Hatewatch — project notes
+# WhoToRoot — project notes
 
 Read this at the start of a session. It is the state of the project as of
 2026-11-13, after PR #8. `CLAUDE.md` holds the rules; this holds the context.
@@ -11,9 +11,15 @@ A "who to root for" site. On any given week a fan knows their own team's game
 matters — what they do not know is which of the other thirteen games they
 should care about, which way, and how much.
 
-Hatewatch answers that. For each remaining game it says which result helps
+WhoToRoot answers that. For each remaining game it says which result helps
 your team, ranked by how much it moves three things: **making the playoffs**,
 **winning the division**, and **the #1 seed**.
+
+**Name.** The site was called Hatewatch until 2026-11-16, when it was renamed
+WhoToRoot: the old name sounded more hostile than a guide to who to root for.
+Only what visitors see changed. The Python package is still `hatewatch/` and
+the refresh job still runs `python -m hatewatch.run`; renaming those would
+change the GitHub Actions command for no visible gain.
 
 - **Every team.** Every number is computed and stored for all 32 teams; the
   site serves `/[team]` for each, and the header's team picker switches

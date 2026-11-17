@@ -17,9 +17,9 @@ import { GOAL_LABELS, MODE_GOALS, OVERALL_WEIGHTS } from "@/lib/types";
  */
 
 export const metadata: Metadata = {
-  title: "How this works — Hatewatch",
+  title: "How this works — WhoToRoot",
   description:
-    "Where Hatewatch's playoff odds come from, what the Root score means, and how accurate the model has been.",
+    "Where WhoToRoot's playoff odds come from, what the Root score means, and how accurate the model has been.",
 };
 
 const WEIGHTS_TEXT = MODE_GOALS.contend.map(
@@ -56,7 +56,7 @@ export default function HowThisWorks() {
         How this works
       </h1>
       <p className="mt-3 text-base leading-relaxed text-muted">
-        Hatewatch tells you which other NFL games to care about this week, and
+        WhoToRoot tells you which other NFL games to care about this week, and
         which way to root. Here is where the numbers come from, and how far to
         trust them.
       </p>

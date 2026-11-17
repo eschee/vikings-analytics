@@ -21,7 +21,7 @@ import type { TeamEntry } from "@/lib/types";
  */
 
 export const metadata: Metadata = {
-  title: "Hatewatch — who to root for",
+  title: "WhoToRoot — which NFL games to root for",
   description:
     "Pick your NFL team and see which other games to root for this week, ranked by how much they move your playoff, division and #1 seed odds.",
 };
@@ -60,8 +60,8 @@ export default async function Home() {
     <>
       <header className="bg-brand pt-6 pb-9 text-white">
         <div className="mx-auto max-w-[600px] px-5 lg:max-w-[1180px] lg:px-8">
-          <span className="font-display text-xl font-bold tracking-[0.14em]">
-            HATEWATCH
+          <span className="font-display text-xl font-bold tracking-tight">
+            WhoToRoot
           </span>
           <h1 className="font-display mt-6 text-[34px] leading-[1.12] font-bold">
             Who should you root for{" "}
